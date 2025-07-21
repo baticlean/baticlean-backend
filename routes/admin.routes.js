@@ -4,14 +4,55 @@ const router = express.Router();
 const User = require('../models/User.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// ROUTE GET /api/admin/users
-// Renvoie tous les utilisateurs (sauf le superAdmin)
-// Protégée : il faut être connecté ET être admin
+// ROUTE GET /api/admin/users - Récupère tous les utilisateurs
 router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    // On récupère tous les utilisateurs dont le rôle n'est pas 'superAdmin'
-    const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash'); // On exclut le mot de passe
+    const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
     res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+// --- NOUVELLE ROUTE ---
+// ROUTE PATCH /api/admin/users/:userId/role - Modifie le rôle d'un utilisateur
+router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    if (!['user', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'Rôle invalide.' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(userId, { role }, { new: true }).select('-passwordHash');
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+    }
+
+    res.status(200).json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+// --- NOUVELLE ROUTE ---
+// ROUTE PATCH /api/admin/users/:userId/status - Modifie le statut d'un utilisateur
+router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'suspended', 'banned'].includes(status)) {
+      return res.status(400).json({ message: 'Statut invalide.' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+    }
+
+    res.status(200).json(updatedUser);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
