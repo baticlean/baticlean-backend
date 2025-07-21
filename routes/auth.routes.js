@@ -30,7 +30,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// --- ROUTE DE CONNEXION MISE À JOUR ---
+// --- ROUTE DE CONNEXION CORRIGÉE ---
 router.post('/login', async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -43,8 +43,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' });
     }
 
-    // <<< LA VÉRIFICATION AJOUTÉE EST ICI >>>
-    // On vérifie le statut de l'utilisateur AVANT de vérifier le mot de passe
     if (user.status !== 'active') {
         return res.status(403).json({ message: 'Votre compte a été suspendu ou banni.' });
     }
@@ -54,8 +52,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' });
     }
 
-    const { _id, username, role, email } = user;
-    const payload = { _id, email, username, role };
+    // === LA CORRECTION EST ICI ===
+    // On inclut maintenant le 'status' dans le token
+    const { _id, username, role, email, status } = user;
+    const payload = { _id, email, username, role, status }; 
 
     const authToken = jwt.sign(payload, process.env.JWT_SECRET || 'super-secret', {
       algorithm: 'HS256',
