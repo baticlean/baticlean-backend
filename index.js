@@ -32,6 +32,10 @@ app.use('/api', require('./routes/auth.routes.js'));
 app.use('/api', require('./routes/auth.routes.js'));
 app.use('/api/services', require('./routes/service.routes.js')); // <<< AJOUTEZ CETTE LIGNE
 
+app.use('/api/services', require('./routes/service.routes.js'));
+app.use('/api/admin', require('./routes/admin.routes.js')); // <<< AJOUTEZ CETTE LIGNE
+
+
 // Démarrage du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
