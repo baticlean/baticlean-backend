@@ -29,6 +29,8 @@ app.get('/', (req, res) => {
 // On dit au serveur d'utiliser les futurs fichiers de routes
 // pour toutes les adresses qui commenceront par /api
 app.use('/api', require('./routes/auth.routes.js'));
+app.use('/api', require('./routes/auth.routes.js'));
+app.use('/api/services', require('./routes/service.routes.js')); // <<< AJOUTEZ CETTE LIGNE
 
 // Démarrage du serveur
 app.listen(PORT, () => {
