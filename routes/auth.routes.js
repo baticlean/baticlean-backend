@@ -1,11 +1,9 @@
-// routes/auth.routes.js
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User.model');
 
-// --- ROUTE D'INSCRIPTION (inchangée) ---
 router.post('/register', async (req, res) => {
   try {
     const { username, email, password, phoneNumber } = req.body;
@@ -22,15 +20,14 @@ router.post('/register', async (req, res) => {
     }
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
-    const newUser = await User.create({ username, email, passwordHash, phoneNumber });
-    res.status(201).json({ message: `Utilisateur ${newUser.username} créé avec succès !` });
+    await User.create({ username, email, passwordHash, phoneNumber });
+    res.status(201).json({ message: `Utilisateur créé avec succès !` });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-// --- ROUTE DE CONNEXION CORRIGÉE ---
 router.post('/login', async (req, res) => {
   try {
     const { login, password } = req.body;
@@ -44,7 +41,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (user.status !== 'active') {
-        return res.status(403).json({ message: 'Votre compte a été suspendu ou banni.' });
+      return res.status(403).json({ message: 'Votre compte a été suspendu ou banni.' });
     }
 
     const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
@@ -52,12 +49,12 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' });
     }
 
-    // === LA CORRECTION EST ICI ===
-    // On inclut maintenant le 'status' dans le token
-    const { _id, username, role, email, status } = user;
-    const payload = { _id, email, username, role, status }; 
+    // --- LA VRAIE CORRECTION EST ICI ---
+    // On s'assure d'inclure 'profilePicture' dans les infos du badge
+    const { _id, username, role, email, status, profilePicture } = user;
+    const payload = { _id, email, username, role, status, profilePicture };
 
-    const authToken = jwt.sign(payload, process.env.JWT_SECRET || 'super-secret', {
+    const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '6h',
     });
