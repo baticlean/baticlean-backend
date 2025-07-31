@@ -4,10 +4,17 @@ const router = express.Router();
 const User = require('../models/User.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// GET /api/admin/users (inchangé)
-router.get('/users', isAuthenticated, isAdmin, async (req, res) => { /* ... */ });
+// ROUTE GET /api/admin/users - Récupère tous les utilisateurs
+router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+  try {
+    const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
 
-// PATCH /api/admin/users/:userId/role
+// ROUTE PATCH /api/admin/users/:userId/role - Modifie le rôle
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -20,12 +27,10 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
 
-    // --- NOTIFICATION WEBSOCKET ---
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
       req.io.to(userSocketId).emit('userUpdated', updatedUser);
     }
-    // ----------------------------
 
     res.status(200).json(updatedUser);
   } catch (error) {
@@ -33,7 +38,7 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   }
 });
 
-// PATCH /api/admin/users/:userId/status
+// ROUTE PATCH /api/admin/users/:userId/status - Modifie le statut
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -46,12 +51,10 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
 
-    // --- NOTIFICATION WEBSOCKET ---
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
       req.io.to(userSocketId).emit('userUpdated', updatedUser);
     }
-    // ----------------------------
 
     res.status(200).json(updatedUser);
   } catch (error) {
