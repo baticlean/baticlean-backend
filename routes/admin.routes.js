@@ -20,23 +20,25 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    if (!['user', 'admin'].includes(role)) { return res.status(400).json({ message: 'Rôle invalide.' }); }
-
+    if (!['user', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'Rôle invalide.' });
+    }
     const userToUpdate = await User.findById(userId);
-    if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
+    if (!userToUpdate) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+    }
 
     userToUpdate.role = role;
     await userToUpdate.save();
 
-    const { _id, username, email, status } = userToUpdate;
-    const payload = { _id, email, username, role, status };
+    const { _id, username, email, status, profilePicture } = userToUpdate;
+    const payload = { _id, email, username, role, status, profilePicture };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '6h',
     });
 
     const updatedUserForAdmins = await User.findById(userId).select('-passwordHash');
-
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
       req.io.to(userSocketId).emit('userUpdated', { user: updatedUserForAdmins, newToken: newAuthToken });
@@ -44,7 +46,6 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 
     res.status(200).json(updatedUserForAdmins);
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
@@ -53,9 +54,13 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
   try {
     const { userId } = req.params;
     const { status } = req.body;
-    if (!['active', 'suspended', 'banned'].includes(status)) { return res.status(400).json({ message: 'Statut invalide.' }); }
+    if (!['active', 'suspended', 'banned'].includes(status)) {
+      return res.status(400).json({ message: 'Statut invalide.' });
+    }
     const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
-    if (!updatedUser) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+    }
 
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
