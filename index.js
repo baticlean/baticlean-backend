@@ -64,7 +64,7 @@ app.get('/', (req, res) => res.send('API BATIClean fonctionnelle ! 🧼'));
 app.use('/api', require('./routes/auth.routes.js'));
 app.use('/api/services', require('./routes/service.routes.js'));
 app.use('/api/admin', require('./routes/admin.routes.js'));
-
+app.use('/api/user', require('./routes/user.routes.js')); // <<< AJOUTEZ CETTE LIGNE
 
 // On lance le serveur via la variable 'server' et non plus 'app'
 server.listen(PORT, () => {
