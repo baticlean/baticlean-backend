@@ -6,8 +6,11 @@ const commentSchema = new Schema(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     username: { type: String, required: true },
     text: { type: String, required: true },
-    // On ajoute les likes au schéma des commentaires
-    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // On s'assure que le tableau de likes existe toujours
+    likes: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: []
+    },
   },
   { timestamps: true }
 );
@@ -23,8 +26,14 @@ const serviceSchema = new Schema(
       required: true,
       enum: ['Ménage', 'Entretien', 'Maintenance', 'Autre'],
     },
-    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    comments: [commentSchema],
+    likes: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: []
+    },
+    comments: {
+      type: [commentSchema],
+      default: []
+    },
   },
   { timestamps: true }
 );
