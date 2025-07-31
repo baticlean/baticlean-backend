@@ -27,7 +27,7 @@ const isAdmin = (req, res, next) => {
 
 const isSuperAdmin = (req, res, next) => {
   if (req.auth.role !== 'superAdmin') {
-    return res.status(4G3).json({ message: 'Accès refusé. Droits Super Administrateur requis.' });
+    return res.status(403).json({ message: 'Accès refusé. Droits Super Administrateur requis.' });
   }
   next();
 };
