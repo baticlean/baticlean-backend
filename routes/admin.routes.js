@@ -2,13 +2,23 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
-const jwt = require('jsonwebtoken'); // On importe jwt pour signer le nouveau token
+const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// GET /users (inchangé)
-router.get('/users', isAuthenticated, isAdmin, /* ... */ );
+// ROUTE GET /api/admin/users - Récupère tous les utilisateurs
+router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+  try {
+    // Méthode corrigée : on récupère tout, puis on filtre.
+    const allUsers = await User.find().select('-passwordHash');
+    const filteredUsers = allUsers.filter(user => user.role !== 'superAdmin');
 
-// --- ROUTE DE MODIFICATION DE RÔLE MISE À JOUR ---
+    res.status(200).json(filteredUsers);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+// ROUTE PATCH /api/admin/users/:userId/role - Modifie le rôle
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -21,7 +31,6 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
     userToUpdate.role = role;
     await userToUpdate.save();
 
-    // On crée un nouveau token avec le rôle mis à jour
     const { _id, username, email, status } = userToUpdate;
     const payload = { _id, email, username, role, status };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET || 'super-secret', {
@@ -31,10 +40,8 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 
     const updatedUserForAdmins = await User.findById(userId).select('-passwordHash');
 
-    // On envoie la mise à jour à l'utilisateur concerné
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
-      // On envoie le nouvel utilisateur ET le nouveau token
       req.io.to(userSocketId).emit('userUpdated', { user: updatedUserForAdmins, newToken: newAuthToken });
     }
 
@@ -44,7 +51,7 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   }
 });
 
-// PATCH /status (On envoie juste l'utilisateur mis à jour, pas besoin de nouveau token)
+// ROUTE PATCH /api/admin/users/:userId/status - Modifie le statut
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
