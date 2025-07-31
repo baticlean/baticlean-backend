@@ -3,22 +3,19 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
+const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// ROUTE GET /api/admin/users - Récupère tous les utilisateurs
-router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+// Seul le Super Admin peut voir la liste des utilisateurs
+router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    // Méthode corrigée : on récupère tout, puis on filtre.
-    const allUsers = await User.find().select('-passwordHash');
-    const filteredUsers = allUsers.filter(user => user.role !== 'superAdmin');
-
-    res.status(200).json(filteredUsers);
+    const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
+    res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-// ROUTE PATCH /api/admin/users/:userId/role - Modifie le rôle
+// Les Admins et Super Admins peuvent modifier les rôles et statuts
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -33,7 +30,7 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 
     const { _id, username, email, status } = userToUpdate;
     const payload = { _id, email, username, role, status };
-    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET || 'super-secret', {
+    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '6h',
     });
@@ -47,11 +44,11 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 
     res.status(200).json(updatedUserForAdmins);
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-// ROUTE PATCH /api/admin/users/:userId/status - Modifie le statut
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
