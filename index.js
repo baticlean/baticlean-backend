@@ -3,49 +3,70 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const Service = require('./models/Service.model'); // Importer le modèle Service
+const http = require('http'); // Module natif de Node.js
+const { Server } = require("socket.io"); // La bibliothèque Socket.IO
 
 const app = express();
+const server = http.createServer(app); // On crée un serveur HTTP qui utilise Express
+
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Autorise toutes les origines pour le WebSocket
+    methods: ["GET", "POST"]
+  }
+});
+
+let onlineUsers = {}; // Pour stocker les utilisateurs connectés { userId: socketId }
+
+io.on("connection", (socket) => {
+  console.log(`Un utilisateur s'est connecté: ${socket.id}`);
+
+  // Quand un utilisateur se connecte, il envoie son ID
+  socket.on("addUser", (userId) => {
+    onlineUsers[userId] = socket.id;
+    console.log("Utilisateurs en ligne:", onlineUsers);
+  });
+
+  socket.on("disconnect", () => {
+    // Nettoie l'utilisateur à la déconnexion
+    for (const userId in onlineUsers) {
+      if (onlineUsers[userId] === socket.id) {
+        delete onlineUsers[userId];
+        break;
+      }
+    }
+    console.log(`Un utilisateur s'est déconnecté: ${socket.id}`);
+    console.log("Utilisateurs en ligne:", onlineUsers);
+  });
+});
+
+
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(async () => { // On rend la fonction asynchrone
-    console.log('✅ Connexion à MongoDB réussie !');
-
-    // --- NOTRE DÉTECTIVE ---
-    // On vérifie si un service de test existe, sinon on le crée
-    const testService = await Service.findOne({ title: "--- SERVICE DE TEST ---" });
-    if (!testService) {
-      console.log("Le service de test n'existe pas, création...");
-      await Service.create({
-        title: "--- SERVICE DE TEST ---",
-        description: "Si vous voyez ce service, c'est que le backend est bien connecté à CETTE base de données.",
-        price: 999,
-        category: "Autre",
-        images: []
-      });
-      console.log(">>> Service de test créé avec succès ! <<<");
-    } else {
-      console.log("Le service de test existe déjà.");
-    }
-    // --------------------
-
-  })
-  .catch((err) => {
-    console.error('❌ Erreur de connexion à MongoDB :', err);
-  });
-
-app.get('/', (req, res) => {
-  res.send('Bienvenue sur l\'API de BATIClean ! 🧼');
+// On passe 'io' et 'onlineUsers' à toutes les requêtes pour pouvoir les utiliser dans les routes
+app.use((req, res, next) => {
+  req.io = io;
+  req.onlineUsers = onlineUsers;
+  next();
 });
 
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ Connexion à MongoDB réussie !'))
+  .catch((err) => console.error('❌ Erreur de connexion à MongoDB :', err));
+
+
+app.get('/', (req, res) => res.send('API BATIClean fonctionnelle ! 🧼'));
+
+// Routes
 app.use('/api', require('./routes/auth.routes.js'));
 app.use('/api/services', require('./routes/service.routes.js'));
 app.use('/api/admin', require('./routes/admin.routes.js'));
 
-app.listen(PORT, () => {
+
+// On lance le serveur via la variable 'server' et non plus 'app'
+server.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
 });
