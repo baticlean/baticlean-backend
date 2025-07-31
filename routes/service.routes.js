@@ -5,35 +5,24 @@ const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
 // === GESTION DES SERVICES (Admin) ===
-// CREATE
 router.post('/', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const { title, description, images, price, category } = req.body;
-    if (!title || !description || !price || !category) {
-      return res.status(400).json({ message: 'Tous les champs sont requis.' });
-    }
-    const newService = await Service.create({ title, description, images, price, category });
+    const newService = await Service.create(req.body);
     req.io.emit('serviceUpdated', newService);
     res.status(201).json(newService);
   } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
+    res.status(400).json({ message: 'Erreur lors de la création du service.' });
   }
 });
-
-// UPDATE
 router.put('/:id', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updatedService) { return res.status(404).json({ message: 'Service non trouvé.' }); }
+    const updatedService = await Service.findByIdAndUpdate(req.params.id, req.body, { new: true });
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
+    res.status(400).json({ message: 'Erreur lors de la mise à jour du service.' });
   }
 });
-
-// DELETE
 router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -42,30 +31,28 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
     req.io.emit('serviceDeleted', { _id: id });
     res.status(200).json({ message: 'Service supprimé avec succès.' });
   } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
+    res.status(400).json({ message: 'Erreur lors de la suppression du service.' });
   }
 });
 
-
 // === AFFICHAGE DES SERVICES (Public) ===
-// GET ALL
 router.get('/', async (req, res) => {
   try {
-    const allServices = await Service.find().populate('comments.user', 'username').sort({ createdAt: -1 });
+    const allServices = await Service.find()
+      .populate('comments.user', 'username _id') // On ajoute '_id' ici
+      .sort({ createdAt: -1 });
     res.status(200).json(allServices);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-
 // === GESTION LIKES & COMMENTAIRES (Utilisateur connecté) ===
-// LIKE/UNLIKE SERVICE
 router.patch('/:id/like', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.auth._id;
-    const service = await Service.findById(id).populate('comments.user', 'username');
+    let service = await Service.findById(id);
     if (!service) { return res.status(404).json({ message: 'Service non trouvé.' }); }
     const hasLiked = service.likes.includes(userId);
     if (hasLiked) {
@@ -73,7 +60,8 @@ router.patch('/:id/like', isAuthenticated, async (req, res) => {
     } else {
       service.likes.push(userId);
     }
-    const updatedService = await service.save();
+    await service.save();
+    const updatedService = await Service.findById(id).populate('comments.user', 'username _id');
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) {
@@ -81,7 +69,6 @@ router.patch('/:id/like', isAuthenticated, async (req, res) => {
   }
 });
 
-// ADD COMMENT
 router.post('/:id/comment', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
@@ -89,10 +76,12 @@ router.post('/:id/comment', isAuthenticated, async (req, res) => {
     const { _id: userId, username } = req.auth;
     if (!text) { return res.status(400).json({ message: 'Le commentaire ne peut pas être vide.' }); }
     const newComment = { user: userId, username, text };
-    let service = await Service.findById(id);
-    service.comments.unshift(newComment);
-    const updatedService = await service.save();
-    await updatedService.populate('comments.user', 'username');
+    const updatedService = await Service.findByIdAndUpdate(
+      id,
+      { $push: { comments: { $each: [newComment], $position: 0 } } },
+      { new: true }
+    ).populate('comments.user', 'username _id'); // On ajoute '_id' ici
+    if (!updatedService) { return res.status(404).json({ message: 'Service non trouvé.' }); }
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) {
@@ -100,47 +89,46 @@ router.post('/:id/comment', isAuthenticated, async (req, res) => {
   }
 });
 
-// UPDATE OWN COMMENT
 router.put('/:serviceId/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
     const { serviceId, commentId } = req.params;
     const { text } = req.body;
     const userId = req.auth._id;
-    const service = await Service.findById(serviceId).populate('comments.user', 'username');
+    let service = await Service.findById(serviceId);
     const comment = service.comments.id(commentId);
     if (!comment) { return res.status(404).json({ message: "Commentaire non trouvé." }); }
-    if (comment.user._id.toString() !== userId) { return res.status(403).json({ message: "Action non autorisée." }); }
+    if (comment.user.toString() !== userId) { return res.status(403).json({ message: "Action non autorisée." }); }
     comment.text = text;
-    const updatedService = await service.save();
+    await service.save();
+    const updatedService = await Service.findById(serviceId).populate('comments.user', 'username _id');
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
 });
 
-// DELETE OWN COMMENT
 router.delete('/:serviceId/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
     const { serviceId, commentId } = req.params;
     const userId = req.auth._id;
-    const service = await Service.findById(serviceId).populate('comments.user', 'username');
+    let service = await Service.findById(serviceId);
     const comment = service.comments.id(commentId);
     if (!comment) { return res.status(404).json({ message: "Commentaire non trouvé." }); }
-    if (comment.user._id.toString() !== userId && req.auth.role !== 'superAdmin') {
+    if (comment.user.toString() !== userId && req.auth.role !== 'superAdmin') {
       return res.status(403).json({ message: "Action non autorisée." });
     }
-    comment.deleteOne();
-    const updatedService = await service.save();
+    await comment.deleteOne();
+    await service.save();
+    const updatedService = await Service.findById(serviceId).populate('comments.user', 'username _id');
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
 });
 
-// LIKE/UNLIKE COMMENT
 router.patch('/:serviceId/comments/:commentId/like', isAuthenticated, async (req, res) => {
   try {
     const { serviceId, commentId } = req.params;
     const userId = req.auth._id;
-    const service = await Service.findById(serviceId).populate('comments.user', 'username');
+    let service = await Service.findById(serviceId);
     const comment = service.comments.id(commentId);
     if (!comment) { return res.status(404).json({ message: "Commentaire non trouvé." }); }
     const hasLiked = comment.likes.includes(userId);
@@ -149,7 +137,8 @@ router.patch('/:serviceId/comments/:commentId/like', isAuthenticated, async (req
     } else {
       comment.likes.push(userId);
     }
-    const updatedService = await service.save();
+    await service.save();
+    const updatedService = await Service.findById(serviceId).populate('comments.user', 'username _id');
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
