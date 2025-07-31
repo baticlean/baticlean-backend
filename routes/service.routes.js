@@ -4,98 +4,82 @@ const router = express.Router();
 const Service = require('../models/Service.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// ROUTE POST /api/services - Pour créer un nouveau service (protégée)
-router.post('/', isAuthenticated, isAdmin, async (req, res) => {
+// --- GESTION DES SERVICES (Admin) ---
+// ... (vos routes POST, PUT, DELETE pour les services restent ici)
+
+// --- AFFICHAGE DES SERVICES (Public) ---
+router.get('/', /* ... */);
+
+// --- GESTION DES LIKES & COMMENTAIRES (Utilisateur connecté) ---
+
+// Liker un service (inchangé)
+router.patch('/:id/like', isAuthenticated, /* ... */);
+
+// Commenter un service (inchangé)
+router.post('/:id/comment', isAuthenticated, /* ... */);
+
+// --- NOUVELLES ROUTES ---
+
+// Modifier son propre commentaire
+router.put('/:serviceId/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
-    const { title, description, images, price, category } = req.body;
-    if (!title || !description || !price || !category) {
-      return res.status(400).json({ message: 'Tous les champs sont requis.' });
-    }
-    const newService = await Service.create({ title, description, images, price, category });
-    res.status(201).json(newService);
-  } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.', error });
-  }
-});
-
-// ROUTE GET /api/services - Pour récupérer tous les services (publique)
-router.get('/', async (req, res) => {
-  try {
-    const allServices = await Service.find().populate('comments.user', 'username').sort({ createdAt: -1 });
-    res.status(200).json(allServices);
-  } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.', error });
-  }
-});
-
-// ROUTE PUT /api/services/:id - Pour modifier un service (protégée)
-router.put('/:id', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const updatedService = await Service.findByIdAndUpdate(id, req.body, { new: true });
-        if (!updatedService) {
-            return res.status(404).json({ message: 'Service non trouvé.' });
-        }
-        res.status(200).json(updatedService);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.', error });
-    }
-});
-
-// ROUTE DELETE /api/services/:id - Pour supprimer un service (protégée)
-router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const deletedService = await Service.findByIdAndDelete(id);
-        if (!deletedService) {
-            return res.status(404).json({ message: 'Service non trouvé.' });
-        }
-        res.status(200).json({ message: 'Service supprimé avec succès.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.', error });
-    }
-});
-
-// ROUTE PATCH /api/services/:id/like - Pour liker ou unliker un service
-router.patch('/:id/like', isAuthenticated, async (req, res) => {
-  try {
-    const { id } = req.params;
+    const { serviceId, commentId } = req.params;
+    const { text } = req.body;
     const userId = req.auth._id;
-    const service = await Service.findById(id);
-    if (!service) { return res.status(404).json({ message: 'Service non trouvé.' }); }
-    const hasLiked = service.likes.includes(userId);
-    if (hasLiked) {
-      service.likes.pull(userId);
-    } else {
-      service.likes.push(userId);
-    }
+
+    const service = await Service.findById(serviceId);
+    const comment = service.comments.id(commentId);
+
+    if (!comment) return res.status(404).json({ message: "Commentaire non trouvé." });
+    if (comment.user.toString() !== userId) return res.status(403).json({ message: "Action non autorisée." });
+
+    comment.text = text;
     await service.save();
     res.status(200).json(service);
-  } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
+  } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
 });
 
-// ROUTE POST /api/services/:id/comment - Pour ajouter un commentaire
-router.post('/:id/comment', isAuthenticated, async (req, res) => {
+// Supprimer son propre commentaire
+router.delete('/:serviceId/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { text } = req.body;
-    const { _id: userId, username } = req.auth;
-    if (!text) {
-      return res.status(400).json({ message: 'Le commentaire ne peut pas être vide.' });
+    const { serviceId, commentId } = req.params;
+    const userId = req.auth._id;
+
+    const service = await Service.findById(serviceId);
+    const comment = service.comments.id(commentId);
+
+    if (!comment) return res.status(404).json({ message: "Commentaire non trouvé." });
+    if (comment.user.toString() !== userId && req.auth.role !== 'superAdmin') {
+      return res.status(403).json({ message: "Action non autorisée." });
     }
-    const newComment = { user: userId, username, text };
-    const updatedService = await Service.findByIdAndUpdate(
-      id,
-      { $push: { comments: { $each: [newComment], $position: 0 } } },
-      { new: true }
-    ).populate('comments.user', 'username');
-    if (!updatedService) { return res.status(404).json({ message: 'Service non trouvé.' }); }
-    res.status(200).json(updatedService);
-  } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
+
+    comment.remove();
+    await service.save();
+    res.status(200).json(service);
+  } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
+});
+
+// Liker un commentaire
+router.patch('/:serviceId/comments/:commentId/like', isAuthenticated, async (req, res) => {
+  try {
+    const { serviceId, commentId } = req.params;
+    const userId = req.auth._id;
+
+    const service = await Service.findById(serviceId);
+    const comment = service.comments.id(commentId);
+
+    if (!comment) return res.status(404).json({ message: "Commentaire non trouvé." });
+
+    const hasLiked = comment.likes.includes(userId);
+    if (hasLiked) {
+      comment.likes.pull(userId);
+    } else {
+      comment.likes.push(userId);
+    }
+
+    await service.save();
+    res.status(200).json(service);
+  } catch (error) { res.status(500).json({ message: 'Erreur interne du serveur.' }); }
 });
 
 module.exports = router;

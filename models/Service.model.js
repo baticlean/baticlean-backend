@@ -3,19 +3,11 @@ const { Schema, model } = require('mongoose');
 
 const commentSchema = new Schema(
   {
-    user: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    username: { // Pour afficher le nom sans faire de recherche supplémentaire
-      type: String,
-      required: true,
-    },
-    text: {
-      type: String,
-      required: true,
-    },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    username: { type: String, required: true },
+    text: { type: String, required: true },
+    // On ajoute les likes au schéma des commentaires
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   },
   { timestamps: true }
 );
@@ -31,13 +23,7 @@ const serviceSchema = new Schema(
       required: true,
       enum: ['Ménage', 'Entretien', 'Maintenance', 'Autre'],
     },
-    // --- NOUVEAUX CHAMPS ---
-    likes: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-      },
-    ],
+    likes: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     comments: [commentSchema],
   },
   { timestamps: true }
