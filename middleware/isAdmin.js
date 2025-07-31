@@ -7,11 +7,14 @@ const isAuthenticated = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ message: 'Aucun token fourni.' });
     }
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'super-secret');
+
+    // On spécifie l'algorithme pour être 100% cohérent avec la création du token
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     req.auth = payload;
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Token invalide.' });
+    // Cette erreur se déclenche si le token est expiré ou si la clé secrète ne correspond pas
+    return res.status(401).json({ message: 'Token invalide.' });
   }
 };
 
@@ -22,4 +25,11 @@ const isAdmin = (req, res, next) => {
   next();
 };
 
-module.exports = { isAuthenticated, isAdmin };
+const isSuperAdmin = (req, res, next) => {
+  if (req.auth.role !== 'superAdmin') {
+    return res.status(4G3).json({ message: 'Accès refusé. Droits Super Administrateur requis.' });
+  }
+  next();
+};
+
+module.exports = { isAuthenticated, isAdmin, isSuperAdmin };
