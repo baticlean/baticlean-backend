@@ -1,9 +1,38 @@
-// routes/admin.routes.js
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
+
+// --- Logique du Middleware Intégrée Directement Ici ---
+
+const isAuthenticated = (req, res, next) => {
+  try {
+    const token = req.headers.authorization.split(' ')[1];
+    if (!token) { return res.status(401).json({ message: 'Aucun token fourni.' }); }
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.auth = payload;
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Token invalide.' });
+  }
+};
+
+const isAdmin = (req, res, next) => {
+  if (req.auth.role !== 'admin' && req.auth.role !== 'superAdmin') {
+    return res.status(403).json({ message: 'Accès refusé. Droits administrateur requis.' });
+  }
+  next();
+};
+
+const isSuperAdmin = (req, res, next) => {
+  if (req.auth.role !== 'superAdmin') {
+    return res.status(403).json({ message: 'Accès refusé. Droits Super Administrateur requis.' });
+  }
+  next();
+};
+
+// --- Routes ---
 
 // Seul le Super Admin peut voir la liste des utilisateurs
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
@@ -20,13 +49,9 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    if (!['user', 'admin'].includes(role)) {
-      return res.status(400).json({ message: 'Rôle invalide.' });
-    }
+
     const userToUpdate = await User.findById(userId);
-    if (!userToUpdate) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
+    if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
     userToUpdate.role = role;
     await userToUpdate.save();
@@ -54,13 +79,9 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
   try {
     const { userId } = req.params;
     const { status } = req.body;
-    if (!['active', 'suspended', 'banned'].includes(status)) {
-      return res.status(400).json({ message: 'Statut invalide.' });
-    }
+
     const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
-    if (!updatedUser) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
+    if (!updatedUser) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
