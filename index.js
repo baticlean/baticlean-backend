@@ -66,6 +66,9 @@ app.use('/api/services', require('./routes/service.routes.js'));
 app.use('/api/admin', require('./routes/admin.routes.js'));
 app.use('/api/user', require('./routes/user.routes.js')); // <<< AJOUTEZ CETTE LIGNE
 
+app.use('/api/tickets', require('./routes/ticket.routes.js'));
+app.use('/api/bookings', require('./routes/booking.routes.js')); // <<< AJOUTEZ CETTE LIGNE
+
 // On lance le serveur via la variable 'server' et non plus 'app'
 server.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
