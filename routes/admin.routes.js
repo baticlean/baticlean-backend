@@ -4,7 +4,7 @@ const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
 
-// --- Middlewares Intégrés ---
+// --- Middlewares intégrés ---
 
 const isAuthenticated = (req, res, next) => {
   try {
@@ -68,9 +68,9 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 
     const newToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '6h' });
 
-    // Émettre l’événement au client
     const socketId = req.onlineUsers[userId];
     if (socketId) {
+      console.log(`🚀 Envoi userUpdate à ${userId}`);
       req.io.to(socketId).emit('userUpdate', { user, newToken });
     }
 
@@ -100,9 +100,9 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
 
     const newToken = status === 'active' ? jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '6h' }) : null;
 
-    // Émettre l’événement au client
     const socketId = req.onlineUsers[userId];
     if (socketId) {
+      console.log(`🚀 Envoi userUpdate à ${userId}`);
       req.io.to(socketId).emit('userUpdate', { user, newToken });
     }
 
