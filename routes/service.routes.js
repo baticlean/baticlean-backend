@@ -7,7 +7,11 @@ const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 // === GESTION DES SERVICES (Admin) ===
 router.post('/', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const newService = await Service.create(req.body);
+    const { title, description, images, price, category } = req.body;
+    if (!title || !description || !price || !category) {
+      return res.status(400).json({ message: 'Tous les champs sont requis.' });
+    }
+    const newService = await Service.create({ title, description, images, price, category });
     const populatedService = await Service.findById(newService._id).populate('comments.user', 'username _id');
     req.io.emit('serviceUpdated', populatedService);
     res.status(201).json(populatedService);
