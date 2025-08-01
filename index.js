@@ -68,6 +68,7 @@ app.use('/api/user', require('./routes/user.routes.js')); // <<< AJOUTEZ CETTE L
 
 app.use('/api/tickets', require('./routes/ticket.routes.js'));
 app.use('/api/bookings', require('./routes/booking.routes.js')); // <<< AJOUTEZ CETTE LIGNE
+app.use('/api/reclamations', require('./routes/reclamation.routes.js')); // <<< AJOUTEZ CETTE LIGNE
 
 // On lance le serveur via la variable 'server' et non plus 'app'
 server.listen(PORT, () => {
