@@ -1,5 +1,17 @@
-// models/Booking.model.js
 const { Schema, model } = require('mongoose');
+
+// Petit schéma pour garder une trace des changements de statut
+const timelineEventSchema = new Schema({
+  status: {
+    type: String,
+    required: true
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: false });
+
 
 const bookingSchema = new Schema(
   {
@@ -13,9 +25,24 @@ const bookingSchema = new Schema(
       ref: 'User',
       required: true,
     },
+    // Nouveaux champs pour le formulaire complet
+    address: {
+      type: String,
+      required: [true, "L'adresse est requise."],
+      trim: true,
+    },
+    phoneNumber: {
+        type: String,
+        required: [true, "Le numéro de téléphone est requis."],
+        trim: true,
+    },
     bookingDate: {
       type: Date,
       required: true,
+    },
+    bookingTime: {
+        type: String,
+        required: [true, "L'heure est requise."],
     },
     status: {
       type: String,
@@ -26,6 +53,15 @@ const bookingSchema = new Schema(
       type: String,
       trim: true,
     },
+    // Nouvelle timeline pour le suivi
+    timeline: {
+        type: [timelineEventSchema],
+        default: [{ status: 'En attente' }]
+    },
+    readByClient: { // Pour le compteur de notifications
+        type: Boolean,
+        default: true
+    }
   },
   {
     timestamps: true,

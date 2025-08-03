@@ -1,4 +1,3 @@
-// routes/booking.routes.js
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
@@ -7,12 +6,22 @@ const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 // ROUTE POST /api/bookings - Un utilisateur crée une réservation
 router.post('/', isAuthenticated, async (req, res) => {
   try {
-    const { serviceId, bookingDate, notes } = req.body;
+    const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
     const userId = req.auth._id;
-    if (!serviceId || !bookingDate) {
-      return res.status(400).json({ message: 'Le service et la date sont requis.' });
+
+    if (!serviceId || !bookingDate || !bookingTime || !address || !phoneNumber) {
+      return res.status(400).json({ message: 'Tous les champs sont requis.' });
     }
-    const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, notes });
+
+    const newBooking = await Booking.create({
+      service: serviceId,
+      user: userId,
+      bookingDate,
+      bookingTime,
+      address,
+      phoneNumber,
+      notes,
+    });
     res.status(201).json(newBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -50,14 +59,20 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
   try {
     const { bookingId } = req.params;
     const { status } = req.body;
+
     if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
       return res.status(400).json({ message: 'Statut invalide.' });
     }
+
     const updatedBooking = await Booking.findByIdAndUpdate(
       bookingId,
-      { status },
+      { 
+        status,
+        $push: { timeline: { status } } // On ajoute un événement à la timeline
+      },
       { new: true }
     ).populate('user', 'username').populate('service', 'title');
+
     if (!updatedBooking) {
       return res.status(404).json({ message: 'Réservation non trouvée.' });
     }
@@ -69,6 +84,42 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
+});
+
+// NOUVEAU : ROUTE PATCH /api/bookings/:bookingId/cancel - Un utilisateur annule sa réservation
+router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const userId = req.auth._id;
+
+        const booking = await Booking.findById(bookingId);
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Réservation non trouvée.' });
+        }
+        if (booking.user.toString() !== userId) {
+            return res.status(403).json({ message: 'Action non autorisée.' });
+        }
+        if (booking.status !== 'En attente') {
+            return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' });
+        }
+
+        booking.status = 'Annulée';
+        booking.timeline.push({ status: 'Annulée' });
+        await booking.save();
+
+        const updatedBooking = await Booking.findById(bookingId).populate('service', 'title');
+
+        // On notifie l'utilisateur lui-même
+        const userSocketId = req.onlineUsers[userId];
+        if (userSocketId) {
+            req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
+        }
+
+        res.status(200).json(updatedBooking);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
 });
 
 module.exports = router;
