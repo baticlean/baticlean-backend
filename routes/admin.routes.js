@@ -38,25 +38,18 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   }
 });
 
-// --- CORRECTION APPLIQUÉE ICI ---
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { status } = req.body;
-    const userToUpdate = await User.findByIdAndUpdate(userId, { status }, { new: true });
-    if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
+    const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
+    if (!updatedUser) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
-    // On crée un nouveau token avec le statut mis à jour
-    const { _id, username, email, role, profilePicture } = userToUpdate;
-    const payload = { _id, email, username, role, status, profilePicture };
-    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
-
-    const updatedUserForAdmins = await User.findById(userId).select('-passwordHash');
     const userSocketId = req.onlineUsers[userId];
     if (userSocketId) {
-      req.io.to(userSocketId).emit('userUpdated', { user: updatedUserForAdmins, newToken: newAuthToken });
+      req.io.to(userSocketId).emit('userUpdated', { user: updatedUser });
     }
-    res.status(200).json(updatedUserForAdmins);
+    res.status(200).json(updatedUser);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }

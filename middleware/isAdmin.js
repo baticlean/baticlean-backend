@@ -1,20 +1,15 @@
-// middleware/isAdmin.js
 const jwt = require('jsonwebtoken');
 
 const isAuthenticated = (req, res, next) => {
   try {
     const token = req.headers.authorization.split(' ')[1];
-    if (!token) {
-      return res.status(401).json({ message: 'Aucun token fourni.' });
-    }
+    if (!token) { return res.status(401).json({ message: 'Aucun token fourni.' }); }
 
-    // On spécifie l'algorithme pour être 100% cohérent avec la création du token
-    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.auth = payload;
     next();
   } catch (error) {
-    // Cette erreur se déclenche si le token est expiré ou si la clé secrète ne correspond pas
-    return res.status(401).json({ message: 'Token invalide.' });
+    res.status(401).json({ message: 'Token invalide.' });
   }
 };
 
