@@ -2,16 +2,20 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
+const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js'); // On n'utilise que 'isAdmin'
 
-router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
+// La route est maintenant protégée par 'isAdmin', qui laisse passer les admins ET les superAdmins
+router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
   try {
+    // La logique pour ne pas afficher le superAdmin est toujours là
     const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
+
+// Les autres routes (modifier rôle/statut, etc.) restent inchangées et fonctionnelles
 
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
@@ -45,7 +49,6 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     const userToUpdate = await User.findByIdAndUpdate(userId, { status }, { new: true });
     if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
-    // On crée un nouveau token avec le statut mis à jour
     const { _id, username, email, role, profilePicture } = userToUpdate;
     const payload = { _id, email, username, role, status, profilePicture };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
