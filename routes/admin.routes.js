@@ -2,12 +2,10 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js'); // On n'a besoin que de 'isAdmin' ici
+const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// La route est maintenant protégée par 'isAdmin', qui laisse passer les admins ET les superAdmins
-router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    // La logique pour ne pas afficher le superAdmin est toujours là
     const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
     res.status(200).json(users);
   } catch (error) {
@@ -15,13 +13,10 @@ router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
-// Les autres actions (modifier rôle/statut) sont aussi protégées par 'isAdmin'
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
     const { role } = req.body;
-    if (!['user', 'admin'].includes(role)) { return res.status(400).json({ message: 'Rôle invalide.' }); }
-
     const userToUpdate = await User.findById(userId);
     if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
@@ -37,7 +32,6 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
     if (userSocketId) {
       req.io.to(userSocketId).emit('userUpdated', { user: updatedUserForAdmins, newToken: newAuthToken });
     }
-
     res.status(200).json(updatedUserForAdmins);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -55,8 +49,21 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     if (userSocketId) {
       req.io.to(userSocketId).emit('userUpdated', { user: updatedUser });
     }
-
     res.status(200).json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ message: 'Erreur interne du serveur.' });
+  }
+});
+
+// NOUVELLE ROUTE POUR LA NOTIFICATION MANUELLE
+router.post('/users/:userId/notify-restored', isAuthenticated, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userSocketId = req.onlineUsers[userId];
+    if (userSocketId) {
+      req.io.to(userSocketId).emit('accountRestored');
+    }
+    res.status(200).json({ message: 'Notification envoyée.' });
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
