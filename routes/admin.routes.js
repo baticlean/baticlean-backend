@@ -1,21 +1,19 @@
+// routes/admin.routes.js
+
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js'); // On n'utilise que 'isAdmin'
+const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// La route est maintenant protégée par 'isAdmin', qui laisse passer les admins ET les superAdmins
 router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    // La logique pour ne pas afficher le superAdmin est toujours là
     const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
     res.status(200).json(users);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
-
-// Les autres routes (modifier rôle/statut, etc.) restent inchangées et fonctionnelles
 
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
