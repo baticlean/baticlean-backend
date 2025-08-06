@@ -13,9 +13,17 @@ const userSchema = new Schema(
       default: 'https://cdn.pixabay.com/photo/2012/04/26/19/43/profile-42914_1280.png', // Une image par défaut
     },
     role: { type: String, enum: ['user', 'admin', 'superAdmin'], default: 'user' },
-    status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' }
+    status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' },
+
+    // À ajouter dans chaque schéma (User, Ticket, Booking, Reclamation)
+    readByAdmin: {
+      type: Boolean,
+      default: false // Par défaut, une nouvelle entrée n'est pas lue
+    }
   },
   { timestamps: true }
 );
 
+
+}
 module.exports = model('User', userSchema);
