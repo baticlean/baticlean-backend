@@ -9,6 +9,10 @@ router.post('/register', async (req, res) => {
     const { username, email, password, phoneNumber } = req.body;
     if (!username || !email || !password || !phoneNumber) {
       return res.status(400).json({ message: 'Tous les champs sont requis.' });
+
+      // On notifie les admins qu'un nouvel utilisateur s'est inscrit
+      req.io.emit('userListUpdated');
+       
     }
     const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (userExists) {
