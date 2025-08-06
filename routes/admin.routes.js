@@ -47,26 +47,23 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     if (!userToUpdate) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
     const { _id, username, email, role, profilePicture } = userToUpdate;
-    const io = req.app.get('socketio');
+
+    // CORRECTION : On utilise req.io directement, comme dans l'autre route
     const userSocketId = req.onlineUsers[userId];
 
     if (status === 'banned' || status === 'suspended') {
-        // SCÉNARIO 1 : L'utilisateur est banni
         const payload = { _id, email, username, role, status, profilePicture };
         const bannedToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
-        if (userSocketId) {
-            // On envoie un ordre explicite de bannissement
-            io.to(userSocketId).emit('forceBan', { bannedToken });
+        if (userSocketId && req.io) { // On vérifie que req.io existe
+            req.io.to(userSocketId).emit('forceBan', { bannedToken });
         }
     } else if (status === 'active') {
-        // SCÉNARIO 2 : L'utilisateur est réactivé
         const payload = { _id, email, username, role, status, profilePicture };
         const newToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
-        if (userSocketId) {
-            // On envoie un ordre explicite de réactivation
-            io.to(userSocketId).emit('accountReactivated', { newToken });
+        if (userSocketId && req.io) { // On vérifie que req.io existe
+            req.io.to(userSocketId).emit('accountReactivated', { newToken });
         }
     }
 
