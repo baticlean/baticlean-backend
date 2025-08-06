@@ -23,8 +23,9 @@ router.post('/', isAuthenticated, async (req, res) => {
       notes,
     });
 
+    // --- NOTIFICATION TEMPS RÉEL AJOUTÉE ICI ---
     // On notifie les admins qu'une nouvelle réservation a été créée
-    req.io.emit('newNotification', { type: 'bookings' });
+    req.io.emit('newNotification');
 
     res.status(201).json(newBooking);
   } catch (error) {
@@ -111,8 +112,8 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         if (userSocketId) {
             req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
         }
-        // On notifie aussi les admins
-        req.io.emit('newNotification', { type: 'bookings' });
+
+        req.io.emit('newNotification');
 
         res.status(200).json(updatedBooking);
     } catch (error) {
