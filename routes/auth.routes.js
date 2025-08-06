@@ -9,10 +9,6 @@ router.post('/register', async (req, res) => {
     const { username, email, password, phoneNumber } = req.body;
     if (!username || !email || !password || !phoneNumber) {
       return res.status(400).json({ message: 'Tous les champs sont requis.' });
-
-      // On notifie les admins qu'un nouvel utilisateur s'est inscrit
-      req.io.emit('userListUpdated');
-       
     }
     const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
     if (userExists) {
@@ -21,6 +17,11 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
     await User.create({ username, email, passwordHash, phoneNumber });
+
+    // --- NOTIFICATION TEMPS RÉEL AJOUTÉE ICI ---
+    // On notifie les admins qu'un nouvel utilisateur s'est inscrit
+    req.io.emit('userListUpdated');
+
     res.status(201).json({ message: `Utilisateur créé avec succès !` });
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -45,11 +46,10 @@ router.post('/login', async (req, res) => {
       expiresIn: '6h',
     });
 
-    // Si l'utilisateur n'est pas actif, on envoie quand même le token avec une erreur
     if (user.status !== 'active') {
         return res.status(403).json({ 
             message: 'Votre compte a été suspendu ou banni.',
-            authToken: authToken // On fournit le token pour garder l'écouteur actif
+            authToken: authToken
         });
     }
 
