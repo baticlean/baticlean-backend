@@ -19,7 +19,7 @@ router.post('/', isAuthenticated, async (req, res) => {
       message,
       screenshots,
     });
-
+    req.io.emit('newNotification');
     res.status(201).json(newReclamation);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });

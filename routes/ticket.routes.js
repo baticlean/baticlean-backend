@@ -15,6 +15,7 @@ router.post('/', isAuthenticated, async (req, res) => {
     }
 
     const newTicket = await Ticket.create({ user: userId, messages });
+    req.io.emit('newNotification');
     res.status(201).json(newTicket);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });

@@ -22,6 +22,7 @@ router.post('/', isAuthenticated, async (req, res) => {
       phoneNumber,
       notes,
     });
+      req.io.emit('newNotification');
     res.status(201).json(newBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
