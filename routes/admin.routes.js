@@ -1,12 +1,10 @@
-// routes/admin.routes.js
-
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
-const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
+const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-router.get('/users', isAuthenticated, isAdmin, async (req, res) => {
+router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
     res.status(200).json(users);
