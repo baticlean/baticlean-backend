@@ -1,14 +1,11 @@
 const { Schema, model } = require('mongoose');
 
-// Le schéma pour un message dans la conversation
 const messageSchema = new Schema({
-  // Le sender peut être un vrai utilisateur (admin ou client) ou null pour le bot
   sender: { 
     type: Schema.Types.ObjectId, 
     ref: 'User',
-    default: null // Important pour les messages du bot
+    default: null
   },
-  // On garde une trace du type de l'expéditeur
   senderType: {
     type: String,
     enum: ['user', 'admin', 'bot'],
@@ -27,6 +24,13 @@ const ticketSchema = new Schema(
       ref: 'User',
       required: true,
     },
+    // --- CHAMP AJOUTÉ ---
+    // Pour savoir quel admin a pris le ticket
+    assignedAdmin: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
     subject: {
       type: String,
       default: "Conversation avec l'assistant IA"
@@ -34,7 +38,7 @@ const ticketSchema = new Schema(
     messages: [messageSchema],
     status: {
       type: String,
-      enum: ['Ouvert', 'En attente de réponse', 'Fermé'],
+      enum: ['Ouvert', 'En attente de réponse', 'Pris en charge', 'Fermé'],
       default: 'Ouvert',
     },
     isReadByUser: { type: Boolean, default: true },
