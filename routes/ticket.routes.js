@@ -1,65 +1,49 @@
+// Fichier : backend/routes/ticket.routes.js
 const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
-const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
+const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// Créer un nouveau ticket depuis le chatbot
 router.post('/', isAuthenticated, async (req, res) => {
-  try {
-    const { messages } = req.body;
-    const userId = req.auth._id;
-    if (!messages || messages.length === 0) {
-      return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
+    try {
+        const { messages } = req.body;
+        const userId = req.auth._id;
+        if (!messages || messages.length === 0) {
+            return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
+        }
+        const newTicket = await Ticket.create({ user: userId, messages: messages, isReadByAdmin: false });
+        const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
+
+        req.io.emit('newTicket', populatedTicket);
+        await broadcastNotificationCounts(req); // CORRECTION ICI
+
+        res.status(201).json(populatedTicket);
+    } catch (error) {
+        console.error("Erreur lors de la création du ticket:", error);
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
-
-    const formattedMessages = messages.map(msg => ({
-        sender: msg.sender === 'user' ? userId : null,
-        senderType: msg.sender,
-        text: msg.text
-    }));
-
-    const newTicket = await Ticket.create({ user: userId, messages: formattedMessages });
-
-      req.io.emit('newNotification'); // <<< AJOUTEZ CETTE LIGNE
-
-    const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
-    req.io.emit('newTicket', populatedTicket);
-
-    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
-
-    res.status(201).json(newTicket);
-  } catch (error) {
-    console.error("Erreur lors de la création du ticket:", error);
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
 });
 
-// Un admin "réclame" un ticket pour y répondre
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const adminId = req.auth._id;
-
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
-        if (ticket.assignedAdmin) return res.status(400).json({ message: 'Ce ticket est déjà pris en charge par un autre administrateur.' });
+        if (ticket.assignedAdmin) return res.status(400).json({ message: 'Ce ticket est déjà pris en charge.' });
 
         ticket.assignedAdmin = adminId;
         ticket.status = 'Pris en charge';
         await ticket.save();
-
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('assignedAdmin', 'username');
-
         req.io.emit('ticketUpdated', updatedTicket);
-
         res.status(200).json(updatedTicket);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Obtenir tous les tickets d'un utilisateur
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
         const tickets = await Ticket.find({ user: req.auth._id }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
@@ -69,7 +53,6 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
     }
 });
 
-// Obtenir tous les tickets (pour les admins)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id } })
@@ -83,7 +66,6 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// Ajouter un message à un ticket
 router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -91,65 +73,51 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        const senderRole = req.auth.role === 'user' ? 'user' : 'admin';
+        const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
         ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
-        if (senderRole === 'admin') {
-            ticket.isReadByUser = false;
-            ticket.status = 'En attente de réponse';
-        } else {
-            ticket.isReadByAdmin = false;
-            ticket.status = 'Pris en charge';
-        }
+        if (senderRole === 'admin') ticket.isReadByUser = false;
+        else ticket.isReadByAdmin = false;
 
         await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
 
         req.io.emit('ticketUpdated', updatedTicket);
-        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
+        await broadcastNotificationCounts(req); // CORRECTION ICI
         res.status(200).json(updatedTicket);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Marquer un ticket comme lu
 router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        if (req.auth.role === 'admin' || req.auth.role === 'superAdmin') {
-            ticket.isReadByAdmin = true;
-        } else {
-            ticket.isReadByUser = true;
-        }
-        await ticket.save();
+        if (req.auth.role.includes('admin')) ticket.isReadByAdmin = true;
+        else ticket.isReadByUser = true;
 
+        await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
+
         req.io.emit('ticketUpdated', updatedTicket);
-        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
+        await broadcastNotificationCounts(req); // CORRECTION ICI
         res.status(200).json(updatedTicket);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Un admin "cache" un ticket au lieu de le supprimer
 router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const adminId = req.auth._id;
-        const updatedTicket = await Ticket.findByIdAndUpdate(
-            ticketId,
-            { $addToSet: { hiddenForAdmins: adminId } },
-            { new: true }
-        );
+        const updatedTicket = await Ticket.findByIdAndUpdate(ticketId, { $addToSet: { hiddenForAdmins: adminId } }, { new: true });
         if (!updatedTicket) {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
-        req.io.to(req.onlineUsers[adminId]).emit('ticketHidden', { _id: ticketId });
         res.status(200).json({ message: 'Ticket masqué avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
