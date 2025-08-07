@@ -21,6 +21,8 @@ router.post('/', isAuthenticated, async (req, res) => {
 
     const newTicket = await Ticket.create({ user: userId, messages: formattedMessages });
 
+      req.io.emit('newNotification'); // <<< AJOUTEZ CETTE LIGNE
+
     const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
     req.io.emit('newTicket', populatedTicket);
 

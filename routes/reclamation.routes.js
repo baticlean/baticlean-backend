@@ -12,7 +12,7 @@ router.post('/', isAuthenticated, async (req, res) => {
       return res.status(400).json({ message: 'Le message ne peut pas être vide.' });
     }
     const newReclamation = await Reclamation.create({ user: userId, message, screenshots });
-
+      
     req.io.emit('newReclamation', newReclamation);
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
     res.status(201).json(newReclamation);
