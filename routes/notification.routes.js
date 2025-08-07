@@ -2,28 +2,18 @@ const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// On importe les modèles de données nécessaires
 const User = require('../models/User.model');
 const Ticket = require('../models/Ticket.model');
-const Booking = require('../models/Booking.model'); // Assurez-vous que ce modèle existe et est importé
+const Booking = require('../models/Booking.model');
 const Reclamation = require('../models/Reclamation.model');
 
-// ROUTE 1 : Compter les nouvelles notifications en utilisant les bons statuts
+// ROUTE 1 : Compter les notifications non lues
 router.get('/counts', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    // Pour les utilisateurs, on va compter ceux créés dans les dernières 24h comme "nouveaux"
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const userCount = await User.countDocuments({ role: 'user', createdAt: { $gte: twentyFourHoursAgo } });
-
-    // Pour les tickets, on compte ceux qui sont 'Ouvert'
-    const ticketCount = await Ticket.countDocuments({ status: 'Ouvert' });
-
-    // Pour les réservations, on suppose qu'un nouveau booking a le statut 'En attente'
-    // Adaptez si le statut par défaut est différent dans votre Booking.model.js
+    const userCount = await User.countDocuments({ isNew: true });
+    const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
     const bookingCount = await Booking.countDocuments({ status: 'En attente' });
-
-    // Pour les réclamations, on compte celles qui sont 'Nouvelle'
-    const reclamationCount = await Reclamation.countDocuments({ status: 'Nouvelle' });
+    const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
 
     res.status(200).json({
       users: userCount,
@@ -37,18 +27,35 @@ router.get('/counts', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
-
-// ROUTE 2 : Marquer les notifications comme lues (Route "factice")
-// Cette route ne modifie pas la base de données car il n'y a pas de champ 'isRead'.
-// Son seul but est de répondre au frontend avec un succès 200 pour éviter les erreurs 404.
+// ROUTE 2 : Marquer les notifications comme lues
 router.patch('/:type/mark-as-read', isAuthenticated, isAdmin, async (req, res) => {
     const { type } = req.params;
+    let updatePromise;
 
-    // On ne fait aucune opération en base de données.
-    // On renvoie simplement un message de succès pour que le frontend soit satisfait.
-    console.log(`[Notification] 'mark-as-read' a été appelé pour le type '${type}'. Aucune action effectuée.`);
+    switch (type) {
+        case 'users':
+            updatePromise = User.updateMany({ isNew: true }, { $set: { isNew: false } });
+            break;
+        case 'tickets':
+            updatePromise = Ticket.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
+            break;
+        case 'reclamations':
+            updatePromise = Reclamation.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
+            break;
+        case 'bookings':
+            updatePromise = Promise.resolve();
+            break;
+        default:
+            return res.status(400).json({ message: 'Type de notification inconnu.' });
+    }
 
-    res.status(200).json({ message: `Requête 'mark-as-read' pour '${type}' reçue avec succès.` });
+    try {
+        await updatePromise;
+        res.status(200).json({ message: `Notifications de type '${type}' marquées comme lues.` });
+    } catch (error) {
+        console.error(`Erreur lors de la mise à jour des notifications de type '${type}':`, error);
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
 });
 
 module.exports = router;

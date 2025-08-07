@@ -60,8 +60,11 @@ const bookingSchema = new Schema(
     },
     readByClient: { // Pour le compteur de notifications
         type: Boolean,
-        default: true
-    }
+        default: false
+    },
+    readByAdmin: {
+      type: Boolean,
+      default: false 
   },
   {
     timestamps: true,

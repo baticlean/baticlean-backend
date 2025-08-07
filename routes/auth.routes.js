@@ -1,27 +1,4 @@
-const express = require('express');
-const router = express.Router();
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User.model');
 
-router.post('/register', async (req, res) => {
-  try {
-    const { username, email, password, phoneNumber } = req.body;
-    if (!username || !email || !password || !phoneNumber) {
-      return res.status(400).json({ message: 'Tous les champs sont requis.' });
-    }
-    const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
-    if (userExists) {
-      return res.status(400).json({ message: 'Email ou numéro de téléphone déjà utilisé.' });
-    }
-    const salt = await bcrypt.genSalt(12);
-    const passwordHash = await bcrypt.hash(password, salt);
-    await User.create({ username, email, passwordHash, phoneNumber });
-    res.status(201).json({ message: `Utilisateur créé avec succès !` });
-  } catch (error) {
-    res.status(500).json({ message: 'Erreur interne du serveur.' });
-  }
-});
 
 router.post('/login', async (req, res) => {
   try {
