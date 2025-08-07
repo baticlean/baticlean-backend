@@ -8,7 +8,7 @@ const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     profilePicture: {
       type: String,
-      default: 'https://i.pravatar.cc/150?u=a042581f4e29026704d', // Une image par défaut
+      default: 'https://pixabay.com/fr/vectors/profil-utilisateur-linternet-homme-42914/', // Une image par défaut
     },
     role: { type: String, enum: ['user', 'admin', 'superAdmin'], default: 'user' },
     status: { type: String, enum: ['active', 'suspended', 'banned'], default: 'active' },
