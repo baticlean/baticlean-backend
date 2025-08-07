@@ -33,7 +33,6 @@ router.post('/', isAuthenticated, async (req, res) => {
   }
 });
 
-// --- NOUVELLE ROUTE AJOUTÉE ---
 // Un admin "réclame" un ticket pour y répondre
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -71,7 +70,11 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
 // Obtenir tous les tickets (pour les admins)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
-        const tickets = await Ticket.find().populate('user', 'username email').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username').sort({ updatedAt: -1 });
+        const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id } })
+            .populate('user', 'username email')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username')
+            .sort({ updatedAt: -1 });
         res.status(200).json(tickets);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -86,7 +89,7 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
+        const senderRole = req.auth.role === 'user' ? 'user' : 'admin';
         ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
         if (senderRole === 'admin') {
@@ -115,7 +118,7 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        if (req.auth.role.includes('admin')) {
+        if (req.auth.role === 'admin' || req.auth.role === 'superAdmin') {
             ticket.isReadByAdmin = true;
         } else {
             ticket.isReadByUser = true;
@@ -131,16 +134,21 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     }
 });
 
-// Supprimer un ticket
-router.delete('/:ticketId', isAuthenticated, isAdmin, async (req, res) => {
+// Un admin "cache" un ticket au lieu de le supprimer
+router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
-        const deletedTicket = await Ticket.findByIdAndDelete(ticketId);
-        if (!deletedTicket) return res.status(404).json({ message: 'Ticket non trouvé.' });
-
-        req.io.emit('ticketDeleted', { _id: ticketId });
-        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
-        res.status(200).json({ message: 'Ticket supprimé avec succès.' });
+        const adminId = req.auth._id;
+        const updatedTicket = await Ticket.findByIdAndUpdate(
+            ticketId,
+            { $addToSet: { hiddenForAdmins: adminId } },
+            { new: true }
+        );
+        if (!updatedTicket) {
+            return res.status(404).json({ message: 'Ticket non trouvé.' });
+        }
+        req.io.to(req.onlineUsers[adminId]).emit('ticketHidden', { _id: ticketId });
+        res.status(200).json({ message: 'Ticket masqué avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }

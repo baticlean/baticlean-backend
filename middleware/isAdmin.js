@@ -1,32 +1,35 @@
-// middleware/isAdmin.js
+const { expressjwt: jwt } = require('express-jwt');
 
-const jwt = require('jsonwebtoken');
+// On vérifie le token
+const isAuthenticated = jwt({
+  secret: process.env.JWT_SECRET,
+  algorithms: ['HS256'],
+  requestProperty: 'auth',
+  getToken: (req) => {
+    if (req.headers.authorization && req.headers.authorization.split(' ')[0] === 'Bearer') {
+      return req.headers.authorization.split(' ')[1];
+    }
+    return null;
+  },
+});
 
-const isAuthenticated = (req, res, next) => {
-  try {
-    const token = req.headers.authorization.split(' ')[1];
-    if (!token) { return res.status(401).json({ message: 'Aucun token fourni.' }); }
-
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.auth = payload;
-    next();
-  } catch (error) {
-    res.status(401).json({ message: 'Token invalide.' });
-  }
-};
-
+// --- CORRECTION ICI ---
+// On vérifie si l'utilisateur est un admin OU un superAdmin
 const isAdmin = (req, res, next) => {
-  if (req.auth.role !== 'admin' && req.auth.role !== 'superAdmin') {
-    return res.status(403).json({ message: 'Accès refusé. Droits administrateur requis.' });
+  if (req.auth && (req.auth.role === 'admin' || req.auth.role === 'superAdmin')) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Accès refusé. Droits administrateur requis.' });
   }
-  next();
 };
 
+// On vérifie si l'utilisateur est un superAdmin
 const isSuperAdmin = (req, res, next) => {
-  if (req.auth.role !== 'superAdmin') {
-    return res.status(403).json({ message: 'Accès refusé. Droits Super Administrateur requis.' });
+  if (req.auth && req.auth.role === 'superAdmin') {
+    next();
+  } else {
+    res.status(403).json({ message: 'Accès refusé. Droits super-administrateur requis.' });
   }
-  next();
 };
 
 module.exports = { isAuthenticated, isAdmin, isSuperAdmin };

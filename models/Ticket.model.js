@@ -24,8 +24,6 @@ const ticketSchema = new Schema(
       ref: 'User',
       required: true,
     },
-    // --- CHAMP AJOUTÉ ---
-    // Pour savoir quel admin a pris le ticket
     assignedAdmin: {
         type: Schema.Types.ObjectId,
         ref: 'User',
@@ -42,7 +40,9 @@ const ticketSchema = new Schema(
       default: 'Ouvert',
     },
     isReadByUser: { type: Boolean, default: true },
-    isReadByAdmin: { type: Boolean, default: false }
+    isReadByAdmin: { type: Boolean, default: false },
+    // --- CHAMP AJOUTÉ ---
+    hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   },
   {
     timestamps: true,
