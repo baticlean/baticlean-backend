@@ -13,16 +13,18 @@ router.post('/', isAuthenticated, async (req, res) => {
       return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
     }
 
-    // On formate les messages du chatbot pour qu'ils correspondent au nouveau modèle
     const formattedMessages = messages.map(msg => ({
-        sender: msg.sender === 'user' ? userId : null, // L'ID de l'utilisateur ou null pour le bot
-        senderType: msg.sender, // 'user' ou 'bot'
+        sender: msg.sender === 'user' ? userId : null,
+        senderType: msg.sender,
         text: msg.text
     }));
 
     const newTicket = await Ticket.create({ user: userId, messages: formattedMessages });
 
-    req.io.emit('newTicket', newTicket);
+    // On envoie le ticket complet aux admins
+    const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
+    req.io.emit('newTicket', populatedTicket);
+
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
     res.status(201).json(newTicket);
   } catch (error) {
@@ -51,7 +53,7 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// Ajouter un message à un ticket (par l'utilisateur ou l'admin)
+// Ajouter un message à un ticket
 router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;

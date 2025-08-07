@@ -20,7 +20,6 @@ const messageSchema = new Schema({
   }
 }, { timestamps: true });
 
-
 const ticketSchema = new Schema(
   {
     user: {
@@ -38,7 +37,6 @@ const ticketSchema = new Schema(
       enum: ['Ouvert', 'En attente de réponse', 'Fermé'],
       default: 'Ouvert',
     },
-    // Pour les notifications
     isReadByUser: { type: Boolean, default: true },
     isReadByAdmin: { type: Boolean, default: false }
   },
