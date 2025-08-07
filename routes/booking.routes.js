@@ -3,7 +3,7 @@ const router = express.Router();
 const Booking = require('../models/Booking.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 
-// ROUTE POST /api/bookings - Un utilisateur crée une réservation
+// Un utilisateur crée une réservation
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
@@ -22,13 +22,17 @@ router.post('/', isAuthenticated, async (req, res) => {
       phoneNumber,
       notes,
     });
+
+    // On notifie les admins qu'une nouvelle réservation a été créée
+    req.io.emit('newBooking', newBooking);
+
     res.status(201).json(newBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-// ROUTE GET /api/bookings/my-bookings - Un utilisateur voit ses propres réservations
+// Un utilisateur voit ses propres réservations
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -41,7 +45,7 @@ router.get('/my-bookings', isAuthenticated, async (req, res) => {
     }
 });
 
-// ROUTE GET /api/bookings - Un admin récupère toutes les réservations
+// Un admin récupère toutes les réservations
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const allBookings = await Booking.find()
@@ -54,7 +58,7 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// ROUTE PATCH /api/bookings/:bookingId/status - Un admin met à jour le statut
+// Un admin met à jour le statut
 router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -66,10 +70,7 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
 
     const updatedBooking = await Booking.findByIdAndUpdate(
       bookingId,
-      { 
-        status,
-        $push: { timeline: { status } } // On ajoute un événement à la timeline
-      },
+      { status, $push: { timeline: { status } } },
       { new: true }
     ).populate('user', 'username').populate('service', 'title');
 
@@ -86,14 +87,12 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
   }
 });
 
-// NOUVEAU : ROUTE PATCH /api/bookings/:bookingId/cancel - Un utilisateur annule sa réservation
+// Un utilisateur annule sa réservation
 router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const userId = req.auth._id;
-
         const booking = await Booking.findById(bookingId);
-
         if (!booking) {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
@@ -103,20 +102,32 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         if (booking.status !== 'En attente') {
             return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' });
         }
-
         booking.status = 'Annulée';
         booking.timeline.push({ status: 'Annulée' });
         await booking.save();
-
         const updatedBooking = await Booking.findById(bookingId).populate('service', 'title');
-
-        // On notifie l'utilisateur lui-même
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
             req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
         }
-
         res.status(200).json(updatedBooking);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// --- NOUVELLE ROUTE ---
+// Un admin supprime une réservation
+router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const deletedBooking = await Booking.findByIdAndDelete(bookingId);
+        if (!deletedBooking) {
+            return res.status(404).json({ message: 'Réservation non trouvée.' });
+        }
+        // On notifie les admins que la réservation a été supprimée
+        req.io.emit('bookingDeleted', { _id: bookingId });
+        res.status(200).json({ message: 'Réservation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
