@@ -20,7 +20,7 @@ const serviceSchema = new Schema(
     title: { type: String, required: true, trim: true },
     description: { type: String, required: true },
     images: [{ type: String }],
-    price: { type: Number, required: true },
+    price: { type: Number, required: false },
     category: {
       type: String,
       required: true,
