@@ -1,23 +1,25 @@
 const { Schema, model } = require('mongoose');
 
-// Petit schéma pour garder une trace des changements de statut
+// Un sous-schéma pour suivre l'historique des statuts
 const timelineEventSchema = new Schema({
-  status: {
-    type: String,
-    required: true
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+    status: {
+        type: String,
+        required: true,
+        enum: ['En attente', 'Confirmée', 'Terminée', 'Annulée']
+    },
+    eventDate: {
+        type: Date,
+        default: Date.now
+    }
 }, { _id: false });
 
 
 const bookingSchema = new Schema(
+  // --- PREMIER ARGUMENT : La définition des champs ---
   {
     service: {
       type: Schema.Types.ObjectId,
-      ref: 'Service',
+      ref: 'Service', // Assurez-vous d'avoir un modèle 'Service'
       required: true,
     },
     user: {
@@ -25,49 +27,21 @@ const bookingSchema = new Schema(
       ref: 'User',
       required: true,
     },
-    // Nouveaux champs pour le formulaire complet
-    address: {
-      type: String,
-      required: [true, "L'adresse est requise."],
-      trim: true,
-    },
-    phoneNumber: {
-        type: String,
-        required: [true, "Le numéro de téléphone est requis."],
-        trim: true,
-    },
-    bookingDate: {
-      type: Date,
-      required: true,
-    },
-    bookingTime: {
-        type: String,
-        required: [true, "L'heure est requise."],
-    },
+    bookingDate: { type: Date, required: true },
+    bookingTime: { type: String, required: true },
+    address: { type: String, required: true },
+    phoneNumber: { type: String, required: true },
+    notes: { type: String },
     status: {
       type: String,
       enum: ['En attente', 'Confirmée', 'Terminée', 'Annulée'],
       default: 'En attente',
     },
-    notes: {
-      type: String,
-      trim: true,
-    },
-    // Nouvelle timeline pour le suivi
-    timeline: {
-        type: [timelineEventSchema],
-        default: [{ status: 'En attente' }]
-    },
-    readByClient: { // Pour le compteur de notifications
-        type: Boolean,
-        default: false
-    },
-    readByAdmin: {
-      type: Boolean,
-      default: false 
+    timeline: [timelineEventSchema]
   },
+  // --- DEUXIÈME ARGUMENT : Les options du schéma (PLACEMENT CORRECT) ---
   {
-    timestamps: true,
+    timestamps: true
   }
 );
 
