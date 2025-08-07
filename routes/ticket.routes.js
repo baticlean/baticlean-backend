@@ -4,7 +4,7 @@ const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
-// Créer un nouveau ticket (maintenant simplifié)
+// Créer un nouveau ticket
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { messages } = req.body;
@@ -14,11 +14,13 @@ router.post('/', isAuthenticated, async (req, res) => {
       return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
     }
 
-    // On crée le ticket avec un sujet par défaut et les messages fournis
+    // --- CORRECTION DÉFINITIVE ICI ---
+    // Le chatbot envoie déjà les messages dans le bon format ('user' ou 'bot').
+    // On n'a pas besoin de les modifier. On les passe directement.
     const newTicket = await Ticket.create({
       user: userId,
       subject: "Conversation avec l'assistant IA",
-      messages: messages.map(msg => ({ sender: msg.sender === 'user' ? userId : null, text: msg.text })) // On adapte le format
+      messages: messages 
     });
 
     // On notifie les admins et on met à jour les compteurs
@@ -45,7 +47,7 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
 // Obtenir tous les tickets (pour les admins)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
-        const tickets = await Ticket.find().populate('user', 'username email').sort({ updatedAt: -1 });
+        const tickets = await Ticket.find().populate('user', 'username email').sort({ createdAt: -1 });
         res.status(200).json(tickets);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
