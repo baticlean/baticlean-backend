@@ -12,7 +12,8 @@ router.get('/counts', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const userCount = await User.countDocuments({ isNew: true });
     const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
-    const bookingCount = await Booking.countDocuments({ status: 'En attente' });
+    // --- AJUSTEMENT AJOUTÉ ICI ---
+    const bookingCount = await Booking.countDocuments({ readByAdmin: false });
     const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
 
     res.status(200).json({
@@ -42,8 +43,9 @@ router.patch('/:type/mark-as-read', isAuthenticated, isAdmin, async (req, res) =
         case 'reclamations':
             updatePromise = Reclamation.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
             break;
+        // --- AJUSTEMENT AJOUTÉ ICI ---
         case 'bookings':
-            updatePromise = Promise.resolve();
+            updatePromise = Booking.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
             break;
         default:
             return res.status(400).json({ message: 'Type de notification inconnu.' });

@@ -8,7 +8,9 @@ const Reclamation = require('../models/Reclamation.model');
 const getNotificationCounts = async () => {
   const userCount = await User.countDocuments({ isNew: true });
   const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
-  const bookingCount = await Booking.countDocuments({ status: 'En attente' });
+  // --- AJUSTEMENT AJOUTÉ ICI ---
+  // On compte les réservations non lues au lieu de celles "En attente"
+  const bookingCount = await Booking.countDocuments({ readByAdmin: false });
   const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
 
   return {

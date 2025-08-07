@@ -37,7 +37,12 @@ const bookingSchema = new Schema(
       enum: ['En attente', 'Confirmée', 'Terminée', 'Annulée'],
       default: 'En attente',
     },
-    timeline: [timelineEventSchema]
+    timeline: [timelineEventSchema],
+    // --- AJUSTEMENT AJOUTÉ ICI ---
+    readByAdmin: {
+        type: Boolean,
+        default: false
+    }
   },
   // --- DEUXIÈME ARGUMENT : Les options du schéma (PLACEMENT CORRECT) ---
   {
