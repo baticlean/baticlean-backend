@@ -69,6 +69,7 @@ app.use('/api/admin', require('./routes/admin.routes.js'));
 app.use('/api/tickets', require('./routes/ticket.routes.js'));
 app.use('/api/bookings', require('./routes/booking.routes.js'));
 app.use('/api/reclamations', require('./routes/reclamation.routes.js'));
+app.use('/api/notifications', require('./routes/notification.routes.js'));
 
 server.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
