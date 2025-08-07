@@ -7,6 +7,10 @@ const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.
 // Créer un nouveau ticket
 router.post('/', isAuthenticated, async (req, res) => {
   try {
+    // --- ESPION 1 ---
+    console.log("--- ESPION : REQUÊTE REÇUE POUR CRÉER UN TICKET ---");
+    console.log("Contenu reçu (req.body):", JSON.stringify(req.body, null, 2));
+
     const { messages } = req.body;
     const userId = req.auth._id;
 
@@ -14,22 +18,23 @@ router.post('/', isAuthenticated, async (req, res) => {
       return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
     }
 
-    // --- CORRECTION DÉFINITIVE ICI ---
-    // Le chatbot envoie déjà les messages dans le bon format ('user' ou 'bot').
-    // On n'a pas besoin de les modifier. On les passe directement.
     const newTicket = await Ticket.create({
       user: userId,
       subject: "Conversation avec l'assistant IA",
       messages: messages 
     });
 
-    // On notifie les admins et on met à jour les compteurs
+    // --- ESPION 2 ---
+    console.log("--- ESPION : TICKET CRÉÉ AVEC SUCCÈS ---");
+
     req.io.emit('newTicket', newTicket);
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json(newTicket);
   } catch (error) {
-    console.error("Erreur lors de la création du ticket:", error);
+    // --- ESPION 3 (LE PLUS IMPORTANT) ---
+    console.error("--- ESPION : ERREUR LORS DE LA CRÉATION DU TICKET ---");
+    console.error(error); // Affiche l'erreur complète de la base de données
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
@@ -98,20 +103,12 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        const newMessage = { sender: req.auth._id, text, attachments: attachments || [] };
+        // Note: Cette partie devra être adaptée pour la messagerie complète plus tard
+        const newMessage = { sender: 'user', text }; // Simplifié pour l'instant
         ticket.messages.push(newMessage);
 
-        if (req.auth.role.includes('admin')) {
-            ticket.isReadByUser = false;
-            ticket.status = 'En attente de réponse';
-            ticket.assignedAdmin = req.auth._id;
-        } else {
-            ticket.isReadByAdmin = false;
-            ticket.status = 'Ouvert';
-        }
-
         await ticket.save();
-        const updatedTicket = await Ticket.findById(ticketId).populate('messages.sender', 'username profilePicture');
+        const updatedTicket = await Ticket.findById(ticketId);
 
         req.io.emit('ticketMessageAdded', updatedTicket);
         broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
