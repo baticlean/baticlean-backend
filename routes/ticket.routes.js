@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
-const { broadcastNotificationCounts } = require('../utils/notifications.js');
+const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
 router.post('/', isAuthenticated, async (req, res) => {
   try {
@@ -14,7 +14,7 @@ router.post('/', isAuthenticated, async (req, res) => {
     const newTicket = await Ticket.create({ user: userId, messages });
 
     req.io.emit('newTicket', newTicket);
-    broadcastNotificationCounts(req.io); // Met à jour les compteurs
+    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json(newTicket);
   } catch (error) {
@@ -39,7 +39,7 @@ router.delete('/:ticketId', isAuthenticated, isAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
         req.io.emit('ticketDeleted', { _id: ticketId });
-        broadcastNotificationCounts(req.io); // Met à jour les compteurs
+        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
         res.status(200).json({ message: 'Ticket supprimé avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });

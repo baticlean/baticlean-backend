@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
-const { broadcastNotificationCounts } = require('../utils/notifications.js');
+const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
 router.post('/', isAuthenticated, async (req, res) => {
   try {
@@ -14,7 +14,7 @@ router.post('/', isAuthenticated, async (req, res) => {
     const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, bookingTime, address, phoneNumber, notes });
 
     req.io.emit('newBooking', newBooking);
-    broadcastNotificationCounts(req.io); // Met à jour les compteurs
+    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json(newBooking);
   } catch (error) {
@@ -56,7 +56,7 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
     if (userSocketId) {
       req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
     }
-    broadcastNotificationCounts(req.io); // Met à jour les compteurs
+    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
     res.status(200).json(updatedBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -81,7 +81,7 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         if (userSocketId) {
             req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
         }
-        broadcastNotificationCounts(req.io); // Met à jour les compteurs
+        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
         res.status(200).json(updatedBooking);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -96,7 +96,7 @@ router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         req.io.emit('bookingDeleted', { _id: bookingId });
-        broadcastNotificationCounts(req.io); // Met à jour les compteurs
+        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
         res.status(200).json({ message: 'Réservation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });

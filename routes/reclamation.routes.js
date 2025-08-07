@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Reclamation = require('../models/Reclamation.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
-const { broadcastNotificationCounts } = require('../utils/notifications.js');
+const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
 router.post('/', isAuthenticated, async (req, res) => {
   try {
@@ -14,7 +14,7 @@ router.post('/', isAuthenticated, async (req, res) => {
     const newReclamation = await Reclamation.create({ user: userId, message, screenshots });
 
     req.io.emit('newReclamation', newReclamation);
-    broadcastNotificationCounts(req.io); // Met à jour les compteurs
+    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json(newReclamation);
   } catch (error) {
@@ -39,7 +39,7 @@ router.delete('/:reclamationId', isAuthenticated, isAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Réclamation non trouvée.' });
         }
         req.io.emit('reclamationDeleted', { _id: reclamationId });
-        broadcastNotificationCounts(req.io); // Met à jour les compteurs
+        broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
         res.status(200).json({ message: 'Réclamation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
