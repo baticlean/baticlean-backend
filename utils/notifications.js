@@ -7,7 +7,7 @@ const Reclamation = require('../models/Reclamation.model');
 // Cette fonction calcule tous les compteurs
 const getNotificationCounts = async () => {
   const userCount = await User.countDocuments({ isNew: true });
-  const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
+  const ticketCount = await Ticket.countDocuments({ isreadByAdmin: false });
   // --- AJUSTEMENT AJOUTÉ ICI ---
   // On compte les réservations non lues au lieu de celles "En attente"
   const bookingCount = await Booking.countDocuments({ readByAdmin: false });
