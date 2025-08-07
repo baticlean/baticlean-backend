@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
+const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// Un utilisateur crée un ticket
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { messages } = req.body;
@@ -13,8 +13,8 @@ router.post('/', isAuthenticated, async (req, res) => {
     }
     const newTicket = await Ticket.create({ user: userId, messages });
 
-    // On notifie les admins qu'un nouveau ticket a été créé
     req.io.emit('newTicket', newTicket);
+    broadcastNotificationCounts(req.io); // Met à jour les compteurs
 
     res.status(201).json(newTicket);
   } catch (error) {
@@ -22,7 +22,6 @@ router.post('/', isAuthenticated, async (req, res) => {
   }
 });
 
-// Un admin récupère tous les tickets
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const tickets = await Ticket.find().populate('user', 'username email').sort({ createdAt: -1 });
@@ -32,8 +31,6 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// --- NOUVELLE ROUTE ---
-// Un admin supprime un ticket
 router.delete('/:ticketId', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -41,8 +38,8 @@ router.delete('/:ticketId', isAuthenticated, isAdmin, async (req, res) => {
         if (!deletedTicket) {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
-        // On notifie les admins que le ticket a été supprimé
         req.io.emit('ticketDeleted', { _id: ticketId });
+        broadcastNotificationCounts(req.io); // Met à jour les compteurs
         res.status(200).json({ message: 'Ticket supprimé avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });

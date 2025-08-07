@@ -2,29 +2,19 @@ const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
+const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// Un utilisateur crée une réservation
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
     const userId = req.auth._id;
-
     if (!serviceId || !bookingDate || !bookingTime || !address || !phoneNumber) {
       return res.status(400).json({ message: 'Tous les champs sont requis.' });
     }
+    const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, bookingTime, address, phoneNumber, notes });
 
-    const newBooking = await Booking.create({
-      service: serviceId,
-      user: userId,
-      bookingDate,
-      bookingTime,
-      address,
-      phoneNumber,
-      notes,
-    });
-
-    // On notifie les admins qu'une nouvelle réservation a été créée
     req.io.emit('newBooking', newBooking);
+    broadcastNotificationCounts(req.io); // Met à jour les compteurs
 
     res.status(201).json(newBooking);
   } catch (error) {
@@ -32,48 +22,33 @@ router.post('/', isAuthenticated, async (req, res) => {
   }
 });
 
-// Un utilisateur voit ses propres réservations
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
-        const userBookings = await Booking.find({ user: userId })
-            .populate('service', 'title images price')
-            .sort({ bookingDate: -1 });
+        const userBookings = await Booking.find({ user: userId }).populate('service', 'title images price').sort({ bookingDate: -1 });
         res.status(200).json(userBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Un admin récupère toutes les réservations
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
-        const allBookings = await Booking.find()
-            .populate('user', 'username email')
-            .populate('service', 'title')
-            .sort({ bookingDate: -1 });
+        const allBookings = await Booking.find().populate('user', 'username email').populate('service', 'title').sort({ bookingDate: -1 });
         res.status(200).json(allBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Un admin met à jour le statut
 router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { bookingId } = req.params;
     const { status } = req.body;
-
     if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
       return res.status(400).json({ message: 'Statut invalide.' });
     }
-
-    const updatedBooking = await Booking.findByIdAndUpdate(
-      bookingId,
-      { status, $push: { timeline: { status } } },
-      { new: true }
-    ).populate('user', 'username').populate('service', 'title');
-
+    const updatedBooking = await Booking.findByIdAndUpdate(bookingId, { status, $push: { timeline: { status } } }, { new: true }).populate('user', 'username').populate('service', 'title');
     if (!updatedBooking) {
       return res.status(404).json({ message: 'Réservation non trouvée.' });
     }
@@ -81,43 +56,38 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
     if (userSocketId) {
       req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
     }
+    broadcastNotificationCounts(req.io); // Met à jour les compteurs
     res.status(200).json(updatedBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
 
-// Un utilisateur annule sa réservation
 router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const userId = req.auth._id;
         const booking = await Booking.findById(bookingId);
-        if (!booking) {
-            return res.status(404).json({ message: 'Réservation non trouvée.' });
-        }
-        if (booking.user.toString() !== userId) {
-            return res.status(403).json({ message: 'Action non autorisée.' });
-        }
-        if (booking.status !== 'En attente') {
-            return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' });
-        }
+        if (!booking) return res.status(404).json({ message: 'Réservation non trouvée.' });
+        if (booking.user.toString() !== userId) return res.status(403).json({ message: 'Action non autorisée.' });
+        if (booking.status !== 'En attente') return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' });
+
         booking.status = 'Annulée';
         booking.timeline.push({ status: 'Annulée' });
         await booking.save();
+
         const updatedBooking = await Booking.findById(bookingId).populate('service', 'title');
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
             req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
         }
+        broadcastNotificationCounts(req.io); // Met à jour les compteurs
         res.status(200).json(updatedBooking);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// --- NOUVELLE ROUTE ---
-// Un admin supprime une réservation
 router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -125,8 +95,8 @@ router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
         if (!deletedBooking) {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
-        // On notifie les admins que la réservation a été supprimée
         req.io.emit('bookingDeleted', { _id: bookingId });
+        broadcastNotificationCounts(req.io); // Met à jour les compteurs
         res.status(200).json({ message: 'Réservation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
