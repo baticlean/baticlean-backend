@@ -2,7 +2,7 @@
 
 require('dotenv').config();
 const express = require('express');
-const cors = 'require('cors');
+const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
 const { Server } = require("socket.io");
@@ -47,8 +47,6 @@ app.use(express.json());
 app.get('/favicon.ico', (req, res) => res.status(204).send());
 
 // --- AJOUT DE LA ROUTE POUR LE CRON-JOB ---
-// Cette route répondra "pong" lorsque le service de cron-job l'appellera.
-// C'est la méthode la plus propre pour garder le serveur "éveillé".
 app.get('/ping', (req, res) => {
   res.status(200).send('pong');
 });
