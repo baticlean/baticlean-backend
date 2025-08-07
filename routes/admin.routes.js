@@ -4,14 +4,26 @@ const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// Route pour obtenir tous les utilisateurs
+// Route pour obtenir tous les utilisateurs (maintenant avec recherche)
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    // --- AJUSTEMENT AJOUTÉ ICI ---
-    // On trie par date de création pour avoir les plus récents en premier
-    const users = await User.find({ role: { $ne: 'superAdmin' } })
-        .sort({ createdAt: -1 })
+    const { search } = req.query; // On récupère le terme de recherche depuis l'URL
+    let query = { role: { $ne: 'superAdmin' } };
+
+    // Si un terme de recherche est fourni, on construit la requête de filtre
+    if (search) {
+      const regex = new RegExp(search, 'i'); // 'i' pour une recherche insensible à la casse
+      query.$or = [
+        { username: regex },
+        { email: regex },
+        { phoneNumber: regex }
+      ];
+    }
+
+    const users = await User.find(query)
+        .sort({ createdAt: -1 }) // On garde le tri pour avoir les plus récents en premier
         .select('-passwordHash');
+
     res.status(200).json(users);
   } catch (error) {
     console.error("Erreur lors de la récupération des utilisateurs:", error);
