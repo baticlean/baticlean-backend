@@ -24,12 +24,12 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
     if (!updatedUser) {
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture };
+    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
-    const userSocketId = req.onlineUsers[userId];
-    if (userSocketId) {
-      req.io.to(userSocketId).emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
-    }
+
+    // On envoie la mise à jour à tout le monde. Le frontend saura qui est concerné.
+    req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
+
     res.status(200).json(updatedUser);
   } catch (error) {
     console.error("Erreur lors de la mise à jour du rôle:", error);
@@ -43,27 +43,20 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     const { userId } = req.params;
     const { status } = req.body;
 
-    console.log(`[BACKEND] 1. Reçu la requête pour changer le statut de ${userId} en '${status}'`);
-
     const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
     if (!updatedUser) {
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
 
-    console.log(`[BACKEND] 2. Statut de l'utilisateur mis à jour dans la DB. Nouveau statut: '${updatedUser.status}'`);
-
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture };
+    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
-    console.log(`[BACKEND] 3. Nouveau token créé avec le statut: '${jwt.decode(newAuthToken).status}'`);
-
-    const userSocketId = req.onlineUsers[userId];
-    if (userSocketId) {
-      console.log(`[BACKEND] 4. Envoi de l'événement 'userUpdated' au socketId ${userSocketId}`);
-      req.io.to(userSocketId).emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
-    } else {
-      console.log(`[BACKEND] 4. Utilisateur ${userId} non trouvé dans les utilisateurs en ligne.`);
-    }
+    // --- CORRECTION DÉFINITIVE ---
+    // Au lieu de cibler un socketId qui peut être introuvable,
+    // on envoie l'événement à TOUS les clients connectés.
+    // Le GlobalSocketListener sur le frontend vérifiera si le message est pour lui.
+    console.log(`[BACKEND] Envoi de l'événement 'userUpdated' à TOUS les clients pour l'utilisateur ${userId}`);
+    req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
 
     res.status(200).json(updatedUser);
   } catch (error) {
