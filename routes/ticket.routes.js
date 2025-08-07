@@ -4,7 +4,7 @@ const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
-// Créer un nouveau ticket
+// Créer un nouveau ticket depuis le chatbot
 router.post('/', isAuthenticated, async (req, res) => {
   try {
     const { messages } = req.body;
@@ -12,16 +12,21 @@ router.post('/', isAuthenticated, async (req, res) => {
     if (!messages || messages.length === 0) {
       return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
     }
+
+    // On formate les messages du chatbot pour qu'ils correspondent au nouveau modèle
     const formattedMessages = messages.map(msg => ({
-        sender: msg.sender === 'user' ? userId : null, // On ne sauvegarde pas l'ID du bot
+        sender: msg.sender === 'user' ? userId : null, // L'ID de l'utilisateur ou null pour le bot
+        senderType: msg.sender, // 'user' ou 'bot'
         text: msg.text
     }));
+
     const newTicket = await Ticket.create({ user: userId, messages: formattedMessages });
 
     req.io.emit('newTicket', newTicket);
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
     res.status(201).json(newTicket);
   } catch (error) {
+    console.error("Erreur lors de la création du ticket:", error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
@@ -39,7 +44,7 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
 // Obtenir tous les tickets (pour les admins)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
-        const tickets = await Ticket.find().populate('user', 'username email').sort({ updatedAt: -1 });
+        const tickets = await Ticket.find().populate('user', 'username email').populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
         res.status(200).json(tickets);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -54,18 +59,19 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        ticket.messages.push({ sender: req.auth._id, text });
+        const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
+        ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
-        if (req.auth.role.includes('admin')) {
-            ticket.isReadByUser = false; // L'utilisateur a un nouveau message à lire
+        if (senderRole === 'admin') {
+            ticket.isReadByUser = false;
             ticket.status = 'En attente de réponse';
         } else {
-            ticket.isReadByAdmin = false; // L'admin a un nouveau message à lire
+            ticket.isReadByAdmin = false;
             ticket.status = 'Ouvert';
         }
 
         await ticket.save();
-        const updatedTicket = await Ticket.findById(ticketId).populate('messages.sender', 'username profilePicture');
+        const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture');
 
         req.io.emit('ticketUpdated', updatedTicket);
         broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
@@ -88,8 +94,11 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
             ticket.isReadByUser = true;
         }
         await ticket.save();
+
+        const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture');
+        req.io.emit('ticketUpdated', updatedTicket);
         broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
-        res.status(200).json({ message: 'Ticket marqué comme lu.' });
+        res.status(200).json(updatedTicket);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }

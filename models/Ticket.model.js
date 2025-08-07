@@ -2,12 +2,13 @@ const { Schema, model } = require('mongoose');
 
 // Le schéma pour un message dans la conversation
 const messageSchema = new Schema({
-  // Le sender peut être un vrai utilisateur (admin ou client)
+  // Le sender peut être un vrai utilisateur (admin ou client) ou null pour le bot
   sender: { 
     type: Schema.Types.ObjectId, 
-    ref: 'User' 
+    ref: 'User',
+    default: null // Important pour les messages du bot
   },
-  // On garde une trace si le message vient du bot
+  // On garde une trace du type de l'expéditeur
   senderType: {
     type: String,
     enum: ['user', 'admin', 'bot'],
