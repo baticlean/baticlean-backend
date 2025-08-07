@@ -3,6 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User.model');
+// On importe la fonction pour notifier les admins
+const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
 router.post('/register', async (req, res) => {
   try {
@@ -19,18 +21,12 @@ router.post('/register', async (req, res) => {
 
     const newUser = await User.create({ username, email, passwordHash, phoneNumber });
 
-    // --- CORRECTION : NOTIFICATION CIBLÉE ---
-    // 1. On récupère les IDs de tous les utilisateurs qui sont admin ou superAdmin.
+    // --- NOTIFICATION CIBLÉE ---
     const admins = await User.find({ role: { $in: ['admin', 'superAdmin'] } }).select('_id');
     const adminIds = admins.map(admin => admin._id.toString());
-
-    // 2. On récupère la liste des utilisateurs actuellement en ligne.
     const onlineUserIds = Object.keys(req.onlineUsers);
-
-    // 3. On filtre pour ne garder que les admins qui sont en ligne.
     const onlineAdmins = adminIds.filter(id => onlineUserIds.includes(id));
 
-    // 4. On envoie la notification uniquement aux sockets de ces admins.
     if (onlineAdmins.length > 0) {
       const messagePayload = { username: newUser.username };
       onlineAdmins.forEach(adminId => {
@@ -38,6 +34,10 @@ router.post('/register', async (req, res) => {
         req.io.to(socketId).emit('newUserRegistered', messagePayload);
       });
     }
+
+    // --- AJUSTEMENT AJOUTÉ ICI ---
+    // On envoie la mise à jour des compteurs à tous les admins en ligne
+    broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json({ message: `Utilisateur créé avec succès !` });
   } catch (error) {
@@ -57,10 +57,7 @@ router.post('/login', async (req, res) => {
     const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordCorrect) { return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' }); }
 
-    // --- CORRECTION ICI ---
-    // On ajoute 'phoneNumber' à la liste des informations extraites de l'utilisateur
     const { _id, username, role, email, status, profilePicture, isNew, phoneNumber } = user;
-    // On ajoute 'phoneNumber' au payload du token
     const payload = { _id, email, username, role, status, profilePicture, isNew, phoneNumber };
 
     const authToken = jwt.sign(payload, process.env.JWT_SECRET, {

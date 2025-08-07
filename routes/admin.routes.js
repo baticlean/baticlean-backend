@@ -7,7 +7,11 @@ const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmi
 // Route pour obtenir tous les utilisateurs
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    const users = await User.find({ role: { $ne: 'superAdmin' } }).select('-passwordHash');
+    // --- AJUSTEMENT AJOUTÉ ICI ---
+    // On trie par date de création pour avoir les plus récents en premier
+    const users = await User.find({ role: { $ne: 'superAdmin' } })
+        .sort({ createdAt: -1 })
+        .select('-passwordHash');
     res.status(200).json(users);
   } catch (error) {
     console.error("Erreur lors de la récupération des utilisateurs:", error);
@@ -27,7 +31,6 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
     const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
-    // On envoie la mise à jour à tout le monde. Le frontend saura qui est concerné.
     req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
 
     res.status(200).json(updatedUser);
@@ -51,10 +54,6 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
-    // --- CORRECTION DÉFINITIVE ---
-    // Au lieu de cibler un socketId qui peut être introuvable,
-    // on envoie l'événement à TOUS les clients connectés.
-    // Le GlobalSocketListener sur le frontend vérifiera si le message est pour lui.
     console.log(`[BACKEND] Envoi de l'événement 'userUpdated' à TOUS les clients pour l'utilisateur ${userId}`);
     req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
 
