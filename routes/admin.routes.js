@@ -7,7 +7,6 @@ const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmi
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const users = await User.find({ role: { $ne: 'superAdmin' } })
-      .sort({ createdAt: -1 }) // <<< AJOUTEZ CETTE LIGNE
       .select('-passwordHash');
     res.status(200).json(users);
   } catch (error) {
