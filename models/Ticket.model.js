@@ -1,17 +1,23 @@
 const { Schema, model } = require('mongoose');
 
-// On utilise un schéma simple pour les messages du chatbot
-const ticketMessageSchema = new Schema({
-  sender: {
+// Le schéma pour un message dans la conversation
+const messageSchema = new Schema({
+  // Le sender peut être un vrai utilisateur (admin ou client)
+  sender: { 
+    type: Schema.Types.ObjectId, 
+    ref: 'User' 
+  },
+  // On garde une trace si le message vient du bot
+  senderType: {
     type: String,
-    enum: ['user', 'bot'], // Le sender est soit 'user', soit 'bot'
-    required: true,
+    enum: ['user', 'admin', 'bot'],
+    required: true
   },
   text: {
     type: String,
     required: true,
   }
-}, { _id: false, timestamps: true });
+}, { timestamps: true });
 
 
 const ticketSchema = new Schema(
@@ -25,16 +31,15 @@ const ticketSchema = new Schema(
       type: String,
       default: "Conversation avec l'assistant IA"
     },
-    messages: [ticketMessageSchema],
+    messages: [messageSchema],
     status: {
       type: String,
-      enum: ['Ouvert', 'En cours', 'Fermé'],
+      enum: ['Ouvert', 'En attente de réponse', 'Fermé'],
       default: 'Ouvert',
     },
-    readByAdmin: {
-        type: Boolean,
-        default: false
-    }
+    // Pour les notifications
+    isReadByUser: { type: Boolean, default: true },
+    isReadByAdmin: { type: Boolean, default: false }
   },
   {
     timestamps: true,
