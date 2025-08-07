@@ -57,8 +57,12 @@ router.post('/login', async (req, res) => {
     const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordCorrect) { return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' }); }
 
-    const { _id, username, role, email, status, profilePicture, isNew } = user;
-    const payload = { _id, email, username, role, status, profilePicture, isNew };
+    // --- CORRECTION ICI ---
+    // On ajoute 'phoneNumber' à la liste des informations extraites de l'utilisateur
+    const { _id, username, role, email, status, profilePicture, isNew, phoneNumber } = user;
+    // On ajoute 'phoneNumber' au payload du token
+    const payload = { _id, email, username, role, status, profilePicture, isNew, phoneNumber };
+
     const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '6h',
