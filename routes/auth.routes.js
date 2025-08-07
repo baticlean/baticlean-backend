@@ -3,7 +3,6 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User.model');
-// On importe la fonction pour notifier les admins
 const { broadcastNotificationCountsToAdmins } = require('../utils/notifications.js');
 
 router.post('/register', async (req, res) => {
@@ -21,7 +20,7 @@ router.post('/register', async (req, res) => {
 
     const newUser = await User.create({ username, email, passwordHash, phoneNumber });
 
-    // --- NOTIFICATION CIBLÉE ---
+    // Envoie le toast de notification
     const admins = await User.find({ role: { $in: ['admin', 'superAdmin'] } }).select('_id');
     const adminIds = admins.map(admin => admin._id.toString());
     const onlineUserIds = Object.keys(req.onlineUsers);
@@ -35,8 +34,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // --- AJUSTEMENT AJOUTÉ ICI ---
-    // On envoie la mise à jour des compteurs à tous les admins en ligne
+    // Envoie la mise à jour des compteurs
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
 
     res.status(201).json({ message: `Utilisateur créé avec succès !` });
