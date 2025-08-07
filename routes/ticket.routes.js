@@ -21,11 +21,13 @@ router.post('/', isAuthenticated, async (req, res) => {
 
     const newTicket = await Ticket.create({ user: userId, messages: formattedMessages });
 
-    // On envoie le ticket complet aux admins
     const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
     req.io.emit('newTicket', populatedTicket);
 
+    // --- CORRECTION AJOUTÉE ICI ---
+    // On envoie la mise à jour des compteurs à tous les admins en ligne
     broadcastNotificationCountsToAdmins(req.io, req.onlineUsers);
+
     res.status(201).json(newTicket);
   } catch (error) {
     console.error("Erreur lors de la création du ticket:", error);
@@ -36,7 +38,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 // Obtenir tous les tickets d'un utilisateur
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
-        const tickets = await Ticket.find({ user: req.auth._id }).sort({ updatedAt: -1 });
+        const tickets = await Ticket.find({ user: req.auth._id }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
         res.status(200).json(tickets);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
