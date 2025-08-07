@@ -30,14 +30,7 @@ const ticketSchema = new Schema(
       enum: ['Ouvert', 'En cours', 'Fermé'],
       default: 'Ouvert',
     },
-    // À ajouter dans chaque schéma (User, Ticket, Booking, Reclamation)
-    readByAdmin: {
-      type: Boolean,
-      default: false // Par défaut, une nouvelle entrée n'est pas lue
-    }
   },
-
-
   {
     timestamps: true,
   }

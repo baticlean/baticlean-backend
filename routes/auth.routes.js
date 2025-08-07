@@ -17,10 +17,6 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
     await User.create({ username, email, passwordHash, phoneNumber });
-
-    // On notifie les admins qu'un nouvel utilisateur s'est inscrit
-    req.io.emit('userListUpdated');
-
     res.status(201).json({ message: `Utilisateur créé avec succès !` });
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -38,17 +34,18 @@ router.post('/login', async (req, res) => {
     const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordCorrect) { return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' }); }
 
-    const { _id, username, role, email, status, profilePicture, phoneNumber } = user;
-    const payload = { _id, email, username, role, status, profilePicture, phoneNumber };
+    const { _id, username, role, email, status, profilePicture } = user;
+    const payload = { _id, email, username, role, status, profilePicture };
     const authToken = jwt.sign(payload, process.env.JWT_SECRET, {
       algorithm: 'HS256',
       expiresIn: '6h',
     });
 
+    // Si l'utilisateur n'est pas actif, on envoie quand même le token avec une erreur
     if (user.status !== 'active') {
         return res.status(403).json({ 
             message: 'Votre compte a été suspendu ou banni.',
-            authToken: authToken
+            authToken: authToken // On fournit le token pour garder l'écouteur actif
         });
     }
 

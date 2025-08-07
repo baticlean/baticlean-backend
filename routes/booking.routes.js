@@ -22,8 +22,6 @@ router.post('/', isAuthenticated, async (req, res) => {
       phoneNumber,
       notes,
     });
-
-    req.io.emit('newNotification');
     res.status(201).json(newBooking);
   } catch (error) {
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -36,7 +34,7 @@ router.get('/my-bookings', isAuthenticated, async (req, res) => {
         const userId = req.auth._id;
         const userBookings = await Booking.find({ user: userId })
             .populate('service', 'title images price')
-            .sort({ createdAt: -1 });
+            .sort({ bookingDate: -1 });
         res.status(200).json(userBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -49,7 +47,7 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         const allBookings = await Booking.find()
             .populate('user', 'username email')
             .populate('service', 'title')
-            .sort({ createdAt: -1 });
+            .sort({ bookingDate: -1 });
         res.status(200).json(allBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -70,8 +68,7 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
       bookingId,
       { 
         status,
-        readByClient: false,
-        $push: { timeline: { status } }
+        $push: { timeline: { status } } // On ajoute un événement à la timeline
       },
       { new: true }
     ).populate('user', 'username').populate('service', 'title');
@@ -89,15 +86,23 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
   }
 });
 
-// ROUTE PATCH /api/bookings/:bookingId/cancel - Un utilisateur annule sa réservation
+// NOUVEAU : ROUTE PATCH /api/bookings/:bookingId/cancel - Un utilisateur annule sa réservation
 router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const userId = req.auth._id;
+
         const booking = await Booking.findById(bookingId);
-        if (!booking) { return res.status(404).json({ message: 'Réservation non trouvée.' }); }
-        if (booking.user.toString() !== userId) { return res.status(403).json({ message: 'Action non autorisée.' }); }
-        if (booking.status !== 'En attente') { return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' }); }
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Réservation non trouvée.' });
+        }
+        if (booking.user.toString() !== userId) {
+            return res.status(403).json({ message: 'Action non autorisée.' });
+        }
+        if (booking.status !== 'En attente') {
+            return res.status(400).json({ message: 'Vous ne pouvez plus annuler cette réservation.' });
+        }
 
         booking.status = 'Annulée';
         booking.timeline.push({ status: 'Annulée' });
@@ -105,42 +110,13 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
 
         const updatedBooking = await Booking.findById(bookingId).populate('service', 'title');
 
+        // On notifie l'utilisateur lui-même
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
             req.io.to(userSocketId).emit('bookingUpdated', updatedBooking);
         }
 
-        req.io.emit('newNotification');
-
         res.status(200).json(updatedBooking);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
-    }
-});
-
-// --- NOUVELLE ROUTE ---
-// ROUTE DELETE /api/bookings/:bookingId - Pour supprimer une réservation
-router.delete('/:bookingId', isAuthenticated, async (req, res) => {
-    try {
-        const { bookingId } = req.params;
-        const userRole = req.auth.role;
-        const userId = req.auth._id;
-
-        const bookingToDelete = await Booking.findById(bookingId);
-        if (!bookingToDelete) {
-            return res.status(404).json({ message: 'Réservation non trouvée.' });
-        }
-
-        // Seul un admin ou l'utilisateur lui-même peut supprimer
-        if (userRole !== 'admin' && userRole !== 'superAdmin' && bookingToDelete.user.toString() !== userId) {
-            return res.status(403).json({ message: 'Action non autorisée.' });
-        }
-
-        await Booking.findByIdAndDelete(bookingId);
-
-        req.io.emit('newNotification'); // Notifie les admins
-
-        res.status(200).json({ message: 'Réservation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }

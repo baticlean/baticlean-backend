@@ -1,10 +1,11 @@
+// routes/user.routes.js
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model.js');
-const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken'); // Importer jwt
 const { isAuthenticated } = require('../middleware/isAdmin.js');
 
-// Fonction pour générer un token mis à jour
+// Crée et renvoie un nouveau token pour un utilisateur
 const generateToken = (user) => {
   const { _id, username, email, phoneNumber, role, status, profilePicture } = user;
   const payload = { _id, username, email, phoneNumber, role, status, profilePicture };
@@ -14,7 +15,6 @@ const generateToken = (user) => {
   });
 };
 
-// Route pour mettre à jour les informations du profil
 router.put('/profile', isAuthenticated, async (req, res) => {
   try {
     const userId = req.auth._id;
@@ -28,11 +28,8 @@ router.put('/profile', isAuthenticated, async (req, res) => {
       { new: true }
     ).select('-passwordHash');
 
-    if (!updatedUser) { 
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
+    if (!updatedUser) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
-    // On renvoie un nouveau token avec les informations à jour
     const authToken = generateToken(updatedUser);
     res.status(200).json({ authToken });
   } catch (error) {
@@ -40,7 +37,6 @@ router.put('/profile', isAuthenticated, async (req, res) => {
   }
 });
 
-// Route pour mettre à jour la photo de profil
 router.put('/profile-picture', isAuthenticated, async (req, res) => {
   try {
     const userId = req.auth._id;
@@ -50,12 +46,8 @@ router.put('/profile-picture', isAuthenticated, async (req, res) => {
       { profilePicture: profilePictureUrl },
       { new: true }
     ).select('-passwordHash');
+    if (!updatedUser) { return res.status(404).json({ message: 'Utilisateur non trouvé.' }); }
 
-    if (!updatedUser) { 
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' }); 
-    }
-
-    // On renvoie un nouveau token avec la nouvelle photo
     const authToken = generateToken(updatedUser);
     res.status(200).json({ authToken });
   } catch (error) {

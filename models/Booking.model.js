@@ -12,6 +12,7 @@ const timelineEventSchema = new Schema({
   }
 }, { _id: false });
 
+
 const bookingSchema = new Schema(
   {
     service: {
@@ -59,11 +60,7 @@ const bookingSchema = new Schema(
     },
     readByClient: { // Pour le compteur de notifications
         type: Boolean,
-        default: false
-    },
-    readByAdmin: {
-      type: Boolean,
-      default: false // Par défaut, une nouvelle entrée n'est pas lue
+        default: true
     }
   },
   {
