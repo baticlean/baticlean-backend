@@ -1,4 +1,4 @@
-// Fichier : backend/models/Booking.model.js (Version avec notifications individuelles)
+// Fichier : backend/models/Booking.model.js (Version avec notifications client)
 const { Schema, model } = require('mongoose');
 
 const timelineEventSchema = new Schema({
@@ -37,8 +37,13 @@ const bookingSchema = new Schema(
       default: 'En attente',
     },
     timeline: [timelineEventSchema],
-    // ✅ MODIFICATION : On remplace "readByAdmin" par une liste d'admins
-    readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+    readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // ✅ NOUVEAU CHAMP : Pour les notifications du client
+    // On met 'true' par défaut pour ne pas notifier les anciennes réservations.
+    isReadByUser: {
+        type: Boolean,
+        default: true
+    }
   },
   {
     timestamps: true
