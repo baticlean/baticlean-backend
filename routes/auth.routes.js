@@ -89,8 +89,8 @@ router.post('/forgot-password', async (req, res) => {
     const sendSmtpEmail = {
       to: [{ email: user.email, name: user.username }],
       sender: {
-        name: 'BATIClean Support',
-        email: 'VOTRE_EMAIL_VALIDÉ_CHEZ_BREVO@exemple.com', // TRÈS IMPORTANT
+        name: 'BATIClean.CI Support',
+        email: 'baticlean225@gmail.com', // TRÈS IMPORTANT
       },
       subject: 'Réinitialisation de votre mot de passe BATIClean',
       htmlContent: `<html><body><p>Bonjour ${user.username},</p><p>Cliquez sur le lien suivant pour réinitialiser votre mot de passe :</p><a href="${resetURL}">Réinitialiser mon mot de passe</a><p>Ce lien expirera dans une heure.</p></body></html>`,
