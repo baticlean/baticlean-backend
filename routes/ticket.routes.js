@@ -112,7 +112,8 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const { text } = req.body;
         const senderId = req.auth._id;
         // La méthode .includes() gère bien les cas 'admin' et 'superAdmin'
-        const isSenderAdmin = req.auth.role.includes('admin');
+        // ✅✅✅ CORRECTION FINALE ET EXPLICITE ✅✅✅
+        const isSenderAdmin = (req.auth.role === 'admin' || req.auth.role === 'superAdmin');
 
         const newMessage = { sender: senderId, text, senderType: isSenderAdmin ? 'admin' : 'user' };
         let updateQuery;
