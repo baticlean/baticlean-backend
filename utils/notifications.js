@@ -1,4 +1,4 @@
-// Fichier : backend/utils/notifications.js (Version Définitive)
+// Fichier : backend/utils/notifications.js (Version avec notifications individuelles)
 
 const User = require('../models/User.model');
 const Ticket = require('../models/Ticket.model');
@@ -12,7 +12,12 @@ const broadcastToAdmins = async (req, event, payload) => {
         admins.forEach(admin => {
             const adminSocketId = onlineUsers[admin._id.toString()];
             if (adminSocketId) {
-                io.to(adminSocketId).emit(event, payload);
+                // Pour les compteurs, on envoie un payload personnalisé. Sinon, le payload général.
+                if (event === 'notificationCountsUpdated' && payload.individualCounts) {
+                    io.to(adminSocketId).emit(event, payload.individualCounts[admin._id.toString()]);
+                } else {
+                    io.to(adminSocketId).emit(event, payload);
+                }
             }
         });
     } catch (error) {
@@ -22,26 +27,32 @@ const broadcastToAdmins = async (req, event, payload) => {
 
 const broadcastNotificationCounts = async (req) => {
     try {
-        // --- CORRECTION DÉFINITIVE DES CHAMPS DE LA BASE DE DONNÉES ---
-        // Ces noms de champs sont maintenant identiques à ceux de votre fichier notification.routes.js
+        const { onlineUsers } = req;
+        const onlineAdminIds = Object.keys(onlineUsers);
 
-        const userCount = await User.countDocuments({ isNew: true });
-        const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
-        const bookingCount = await Booking.countDocuments({ readByAdmin: false });
-        const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
+        // Objet pour stocker les compteurs de chaque admin connecté
+        const individualCounts = {};
 
-        const counts = {
-            users: userCount,
-            tickets: ticketCount,
-            bookings: bookingCount,
-            reclamations: reclamationCount
-        };
+        // On calcule les compteurs pour chaque admin en ligne
+        for (const adminId of onlineAdminIds) {
+            const userCount = await User.countDocuments({ readByAdmins: { $ne: adminId } });
+            const ticketCount = await Ticket.countDocuments({ readByAdmins: { $ne: adminId } });
+            const bookingCount = await Booking.countDocuments({ readByAdmins: { $ne: adminId } });
+            const reclamationCount = await Reclamation.countDocuments({ readByAdmins: { $ne: adminId } });
 
-        console.log("🚀 [Serveur] Envoi de l'objet de compteurs unifié :", counts);
-        await broadcastToAdmins(req, 'notificationCountsUpdated', counts);
+            individualCounts[adminId] = {
+                users: userCount,
+                tickets: ticketCount,
+                bookings: bookingCount,
+                reclamations: reclamationCount
+            };
+        }
+
+        console.log("🚀 [Serveur] Envoi des compteurs individuels:", individualCounts);
+        await broadcastToAdmins(req, 'notificationCountsUpdated', { individualCounts });
 
     } catch (error) {
-        console.error("❌ Erreur critique lors du calcul des compteurs:", error);
+        console.error("❌ Erreur critique lors du calcul des compteurs individuels:", error);
     }
 };
 

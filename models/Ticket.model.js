@@ -1,3 +1,4 @@
+// Fichier : backend/models/Ticket.model.js (Version avec notifications individuelles)
 const { Schema, model } = require('mongoose');
 
 const messageSchema = new Schema({
@@ -40,8 +41,8 @@ const ticketSchema = new Schema(
       default: 'Ouvert',
     },
     isReadByUser: { type: Boolean, default: true },
-    isReadByAdmin: { type: Boolean, default: false },
-    // --- CHAMP AJOUTÉ ---
+    // ✅ MODIFICATION : On remplace "isReadByAdmin" par une liste d'admins
+    readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   },
   {

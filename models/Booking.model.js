@@ -1,6 +1,6 @@
+// Fichier : backend/models/Booking.model.js (Version avec notifications individuelles)
 const { Schema, model } = require('mongoose');
 
-// Un sous-schéma pour suivre l'historique des statuts
 const timelineEventSchema = new Schema({
     status: {
         type: String,
@@ -15,11 +15,10 @@ const timelineEventSchema = new Schema({
 
 
 const bookingSchema = new Schema(
-  // --- PREMIER ARGUMENT : La définition des champs ---
   {
     service: {
       type: Schema.Types.ObjectId,
-      ref: 'Service', // Assurez-vous d'avoir un modèle 'Service'
+      ref: 'Service',
       required: true,
     },
     user: {
@@ -38,13 +37,9 @@ const bookingSchema = new Schema(
       default: 'En attente',
     },
     timeline: [timelineEventSchema],
-    // --- AJUSTEMENT AJOUTÉ ICI ---
-    readByAdmin: {
-        type: Boolean,
-        default: false
-    }
+    // ✅ MODIFICATION : On remplace "readByAdmin" par une liste d'admins
+    readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   },
-  // --- DEUXIÈME ARGUMENT : Les options du schéma (PLACEMENT CORRECT) ---
   {
     timestamps: true
   }

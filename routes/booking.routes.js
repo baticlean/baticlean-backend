@@ -1,4 +1,4 @@
-// Fichier : backend/routes/booking.routes.js (Version Finale Complétée)
+// Fichier : backend/routes/booking.routes.js (Version finale avec notifications individuelles)
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
@@ -13,7 +13,6 @@ router.post('/', isAuthenticated, async (req, res) => {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
 
-        // ✅ AJOUT : Marquer la nouvelle réservation comme non lue par l'admin
         const newBooking = await Booking.create({ 
             service: serviceId, 
             user: userId, 
@@ -22,7 +21,7 @@ router.post('/', isAuthenticated, async (req, res) => {
             address, 
             phoneNumber, 
             notes,
-            readByAdmin: false 
+            readByAdmins: [] // La liste est vide, donc non lue pour tous les admins
         });
 
         const populatedBooking = await Booking.findById(newBooking._id).populate('user', 'username email').populate('service', 'title');
@@ -59,15 +58,16 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
     try {
         const { bookingId } = req.params;
         const { status } = req.body;
+        const adminId = req.auth._id;
+
         if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
             return res.status(400).json({ message: 'Statut invalide.' });
         }
 
-        // ✅ AJOUT : Marquer comme lue quand l'admin change le statut
         const updateQuery = { 
             status, 
-            readByAdmin: true, 
-            $push: { timeline: { status } } 
+            $push: { timeline: { status } },
+            $addToSet: { readByAdmins: adminId }
         };
 
         const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true }).populate('user', 'username').populate('service', 'title');

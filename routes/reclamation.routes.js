@@ -1,4 +1,4 @@
-// Fichier : backend/routes/reclamation.routes.js (Version Finale Complétée)
+// Fichier : backend/routes/reclamation.routes.js (Version finale avec notifications individuelles)
 const express = require('express');
 const router = express.Router();
 const Reclamation = require('../models/Reclamation.model');
@@ -12,13 +12,11 @@ router.post('/', isAuthenticated, async (req, res) => {
             return res.status(400).json({ message: 'Le message ne peut pas être vide.' });
         }
 
-        // ✅ AJOUT : Marquer la nouvelle réclamation comme non lue par l'admin
         const newReclamation = await Reclamation.create({ 
             user: req.auth._id, 
             message, 
-            screenshots, 
-            isHandled: false,
-            readByAdmin: false
+            screenshots,
+            readByAdmins: [] // Vide à la création, non lue pour les admins
         });
 
         const populatedReclamation = await Reclamation.findById(newReclamation._id).populate('user', 'username email status');
@@ -61,11 +59,11 @@ router.patch('/:reclamationId/hide', isAuthenticated, isAdmin, async (req, res) 
 router.patch('/:reclamationId/handle', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { reclamationId } = req.params;
+        const adminId = req.auth._id;
 
-        // ✅ AJOUT : Marquer comme lue quand l'admin traite la réclamation
         const updateQuery = { 
-            isHandled: true,
-            readByAdmin: true
+            status: 'En cours',
+            $addToSet: { readByAdmins: adminId }
         };
 
         const updatedReclamation = await Reclamation.findByIdAndUpdate(reclamationId, updateQuery, { new: true });

@@ -1,3 +1,4 @@
+// Fichier : backend/models/Reclamation.model.js (Version avec notifications individuelles)
 const { Schema, model } = require('mongoose');
 
 const reclamationSchema = new Schema(
@@ -14,7 +15,7 @@ const reclamationSchema = new Schema(
     },
     screenshots: [
       {
-        type: String, // URLs des images depuis Cloudinary
+        type: String, 
       },
     ],
     status: {
@@ -22,11 +23,8 @@ const reclamationSchema = new Schema(
       enum: ['Nouvelle', 'En cours', 'Résolue'],
       default: 'Nouvelle',
     },
-    readByAdmin: {
-        type: Boolean,
-        default: false
-    },
-    // --- CHAMP AJOUTÉ ---
+    // ✅ MODIFICATION : On remplace "readByAdmin" par une liste d'admins
+    readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   },
   {
