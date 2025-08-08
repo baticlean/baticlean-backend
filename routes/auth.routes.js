@@ -1,12 +1,14 @@
+// Fichier : backend/routes/auth.routes.js
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // Ajout pour le mot de passe oublié
+const crypto = require('crypto'); // Pour le mot de passe oublié
 const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
-const rateLimit = require('express-rate-limit');
-const SibApiV3Sdk = require('sib-api-v3-sdk'); // Ajout pour Brevo
+const rateLimit = require('express-rate-limit'); // Pour la sécurité
+const SibApiV3Sdk = require('sib-api-v3-sdk'); // Pour Brevo
 
 // CONFIGURATION DE BREVO
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
@@ -14,7 +16,7 @@ let apiKey = defaultClient.authentications['api-key'];
 apiKey.apiKey = process.env.BREVO_API_KEY;
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
-// LIMITEUR DE REQUÊTES
+// LIMITEUR DE REQUÊTES (SÉCURITÉ)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -25,11 +27,12 @@ const authLimiter = rateLimit({
         message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.'
     },
     keyGenerator: (req, res) => {
+        // Blocage intelligent par IP + email/login pour ne pas pénaliser les autres
         return req.ip + (req.body.login || req.body.email);
     },
 });
 
-// ROUTE /register (inchangée)
+// ROUTE /register
 router.post('/register', authLimiter, async (req, res) => {
     try {
         const { username, email, password, phoneNumber } = req.body;
@@ -64,7 +67,7 @@ router.post('/register', authLimiter, async (req, res) => {
     }
 });
 
-// ROUTE /login (inchangée)
+// ROUTE /login
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -98,7 +101,7 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE (PROTÉGÉE)
+// ROUTE : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE
 router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         const { email } = req.body;
@@ -133,7 +136,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : RÉINITIALISATION EFFECTIVE DU MOT DE PASSE
+// ROUTE : RÉINITIALISATION EFFECTIVE DU MOT DE PASSE
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
