@@ -41,7 +41,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 });
 
 
-// ✅✅✅ CORRECTION POUR LE SUPER ADMIN ✅✅✅
+// ✅ CORRECTION FINALE POUR LA LOGIQUE ADMIN / SUPERADMIN
 // Route pour qu'un admin "réclame" un ticket
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -51,11 +51,11 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
 
         let findQuery = { _id: ticketId };
 
-        // Si l'utilisateur est un 'admin' simple, il ne peut prendre qu'un ticket non assigné
+        // Un admin normal ne peut prendre qu'un ticket non assigné.
         if (adminRole === 'admin') {
             findQuery.assignedAdmin = null;
         }
-        // Si c'est un 'superAdmin', il peut prendre n'importe quel ticket, même déjà assigné.
+        // Un superAdmin n'a pas cette restriction et peut réclamer n'importe quel ticket.
 
         const updatedTicket = await Ticket.findOneAndUpdate(
             findQuery,
@@ -68,8 +68,7 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
         ).populate('user', 'username').populate('assignedAdmin', 'username');
 
         if (!updatedTicket) {
-            // Le message d'erreur est plus précis maintenant
-            return res.status(404).json({ message: 'Ticket non trouvé ou déjà pris en charge par un autre administrateur.' });
+             return res.status(404).json({ message: 'Ticket non trouvé ou déjà pris en charge par un autre administrateur.' });
         }
 
         req.io.emit('ticketUpdated', updatedTicket);
@@ -112,21 +111,21 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const { ticketId } = req.params;
         const { text } = req.body;
         const senderId = req.auth._id;
-        // La méthode .includes() fonctionne pour 'admin' et 'superAdmin'
+        // La méthode .includes() gère bien les cas 'admin' et 'superAdmin'
         const isSenderAdmin = req.auth.role.includes('admin');
 
         const newMessage = { sender: senderId, text, senderType: isSenderAdmin ? 'admin' : 'user' };
         let updateQuery;
 
         if (isSenderAdmin) {
-            // L'admin ou superAdmin répond
+            // Un admin ou superAdmin répond
             updateQuery = {
                 $push: { messages: newMessage },
                 $set: { isReadByUser: false },
                 $addToSet: { readByAdmins: senderId }
             };
         } else {
-            // Le client répond
+            // Un client répond
             updateQuery = {
                 $push: { messages: newMessage },
                 $set: { readByAdmins: [] }
