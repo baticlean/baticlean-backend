@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const jwt =require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const crypto = require('crypto'); // Outil Node.js pour générer des tokens sécurisés
 const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
@@ -17,24 +17,17 @@ apiKey.apiKey = process.env.BREVO_API_KEY; // Assurez-vous que BREVO_API_KEY est
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 
-// Sécurité anti-force-brute -- MODIFICATION CI-DESSOUS
+// Sécurité anti-force-brute
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // Bloquer après 5 tentatives
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    // La nouvelle fonction 'handler' est appelée lorsque la limite est dépassée
-    handler: (req, res, next, options) => {
-        res.status(options.statusCode).json({
-            error: 'Trop de tentatives de connexion.',
-            message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.',
-            // On ajoute une propriété pour indiquer au frontend de rediriger
-            // Le frontend devra utiliser cette information pour changer de page.
-            redirectTo: '/forgot-page' // ⚠️ Assurez-vous que cette route correspond à celle de ForgotPage.jsx dans votre routeur React !
-        });
+    message: { 
+        error: 'Trop de tentatives de connexion.',
+        message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.'
     },
     keyGenerator: (req, res) => {
-        // Utilise l'IP et l'identifiant pour un suivi plus précis
         return req.ip + (req.body.login || req.body.email);
     },
 });
@@ -49,8 +42,8 @@ router.post('/register', authLimiter, async (req, res) => {
 
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
-            return res.status(400).json({
-                message: 'Le mot de passe ne respecte pas les critères de sécurité. Il doit contenir au moins 9 caractères, dont 3 chiffres, 1 caractère spécial et des lettres.'
+            return res.status(400).json({ 
+                message: 'Le mot de passe ne respecte pas les critères de sécurité. Il doit contenir au moins 9 caractères, dont 3 chiffres, 1 caractère spécial et des lettres.' 
             });
         }
 
@@ -95,7 +88,7 @@ router.post('/login', authLimiter, async (req, res) => {
         });
 
         if (user.status !== 'active') {
-            return res.status(403).json({
+            return res.status(403).json({ 
                 message: 'Votre compte a été suspendu ou banni.',
                 authToken: authToken
             });
@@ -161,7 +154,7 @@ router.post('/reset-password/:token', async (req, res) => {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
         // On cherche l'utilisateur avec le bon token, qui n'a pas expiré
-        const user = await User.findOne({
+        const user = await User.findOne({ 
             passwordResetToken: hashedToken,
             passwordResetExpires: { $gt: Date.now() }
         });
@@ -174,8 +167,8 @@ router.post('/reset-password/:token', async (req, res) => {
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
-            return res.status(400).json({
-                message: 'Le nouveau mot de passe ne respecte pas les critères de sécurité.'
+            return res.status(400).json({ 
+                message: 'Le nouveau mot de passe ne respecte pas les critères de sécurité.' 
             });
         }
 
