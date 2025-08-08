@@ -41,14 +41,24 @@ router.post('/', isAuthenticated, async (req, res) => {
 });
 
 
+// ✅✅✅ CORRECTION POUR LE SUPER ADMIN ✅✅✅
 // Route pour qu'un admin "réclame" un ticket
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const adminId = req.auth._id;
+        const adminRole = req.auth.role;
+
+        let findQuery = { _id: ticketId };
+
+        // Si l'utilisateur est un 'admin' simple, il ne peut prendre qu'un ticket non assigné
+        if (adminRole === 'admin') {
+            findQuery.assignedAdmin = null;
+        }
+        // Si c'est un 'superAdmin', il peut prendre n'importe quel ticket, même déjà assigné.
 
         const updatedTicket = await Ticket.findOneAndUpdate(
-            { _id: ticketId, assignedAdmin: null },
+            findQuery,
             { 
                 assignedAdmin: adminId, 
                 status: 'Pris en charge',
@@ -58,7 +68,8 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
         ).populate('user', 'username').populate('assignedAdmin', 'username');
 
         if (!updatedTicket) {
-             return res.status(404).json({ message: 'Ticket non trouvé ou déjà pris en charge.' });
+            // Le message d'erreur est plus précis maintenant
+            return res.status(404).json({ message: 'Ticket non trouvé ou déjà pris en charge par un autre administrateur.' });
         }
 
         req.io.emit('ticketUpdated', updatedTicket);
@@ -69,6 +80,7 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 
 // Route pour obtenir les tickets d'un utilisateur
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
@@ -100,42 +112,40 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const { ticketId } = req.params;
         const { text } = req.body;
         const senderId = req.auth._id;
-        const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
+        // La méthode .includes() fonctionne pour 'admin' et 'superAdmin'
+        const isSenderAdmin = req.auth.role.includes('admin');
 
-        const newMessage = { sender: senderId, text, senderType: senderRole };
+        const newMessage = { sender: senderId, text, senderType: isSenderAdmin ? 'admin' : 'user' };
         let updateQuery;
 
-        if (senderRole === 'admin') {
-            // L'admin répond : on met à jour le ticket en une seule fois
+        if (isSenderAdmin) {
+            // L'admin ou superAdmin répond
             updateQuery = {
                 $push: { messages: newMessage },
-                $set: { isReadByUser: false }, // Notifie le client
-                $addToSet: { readByAdmins: senderId } // S'assure que l'admin actuel a lu le message
+                $set: { isReadByUser: false },
+                $addToSet: { readByAdmins: senderId }
             };
         } else {
-            // Le client répond : on notifie tous les admins
+            // Le client répond
             updateQuery = {
                 $push: { messages: newMessage },
                 $set: { readByAdmins: [] }
             };
         }
 
-        // On exécute la mise à jour et on attend le résultat
         const ticketAfterUpdate = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
 
         if (!ticketAfterUpdate) {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
 
-        // On peuple le ticket pour l'envoyer au frontend
         const populatedTicket = await Ticket.findById(ticketAfterUpdate._id)
             .populate('user', 'username')
             .populate('messages.sender', 'username profilePicture')
             .populate('assignedAdmin', 'username');
 
-        // On envoie les notifications
         req.io.emit('ticketUpdated', populatedTicket);
-        await broadcastNotificationCounts(req); // Cette fonction est maintenant appelée APRÈS la mise à jour
+        await broadcastNotificationCounts(req);
 
         res.status(200).json(populatedTicket);
 
