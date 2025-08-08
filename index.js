@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
+const helmet = require('helmet'); // ✅ 1. IMPORTER HELMET
 const { initializeSocket, getIO, getOnlineUsers } = require('./socketManager'); // On importe depuis notre nouveau fichier
 
 const app = express();
