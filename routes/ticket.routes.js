@@ -1,4 +1,4 @@
-// Fichier : backend/routes/ticket.routes.js (Version Finale Corrigée)
+// Fichier : backend/routes/ticket.routes.js (Version Finale Standardisée)
 
 const express = require('express');
 const router = express.Router();
@@ -10,29 +10,23 @@ const { broadcastNotificationCounts } = require('../utils/notifications.js');
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { messages } = req.body;
-        const userId = req.auth._id; // L'ID de l'utilisateur qui crée le ticket
+        const userId = req.auth._id;
 
         if (!messages || messages.length === 0) {
             return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
         }
 
-        // --- CORRECTION CLÉ ---
-        // On formate les messages reçus du frontend pour qu'ils correspondent au schéma de la base de données.
-        const formattedMessages = messages.map(msg => {
-            return {
-                // Si l'expéditeur est 'user', on met son ID. Si c'est 'bot', on met null.
-                sender: msg.sender === 'user' ? userId : null,
-                senderType: msg.sender, // On garde la trace de qui a parlé ('user' ou 'bot')
-                text: msg.text
-            };
-        });
-        // --- FIN DE LA CORRECTION ---
+        const formattedMessages = messages.map(msg => ({
+            sender: msg.sender === 'user' ? userId : null,
+            senderType: msg.sender,
+            text: msg.text
+        }));
 
-        // On crée le ticket avec les messages correctement formatés
+        // CORRECTION : On utilise "readByAdmin"
         const newTicket = await Ticket.create({
             user: userId,
             messages: formattedMessages,
-            isReadByAdmin: false
+            readByAdmin: false 
         });
 
         const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
@@ -42,7 +36,7 @@ router.post('/', isAuthenticated, async (req, res) => {
 
         res.status(201).json(populatedTicket);
     } catch (error) {
-        console.error("Erreur détaillée lors de la création du ticket:", error); // Affiche l'erreur Mongoose dans la console backend
+        console.error("Erreur détaillée lors de la création du ticket:", error);
         res.status(500).json({ message: 'Erreur interne du serveur lors de la création du ticket.' });
     }
 });
@@ -59,34 +53,15 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
 
         ticket.assignedAdmin = adminId;
         ticket.status = 'Pris en charge';
+        ticket.readByAdmin = true; // CORRECTION : On utilise "readByAdmin"
+
         await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('assignedAdmin', 'username');
+
         req.io.emit('ticketUpdated', updatedTicket);
+        await broadcastNotificationCounts(req);
+
         res.status(200).json(updatedTicket);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
-    }
-});
-
-// Route pour obtenir les tickets d'un utilisateur
-router.get('/my-tickets', isAuthenticated, async (req, res) => {
-    try {
-        const tickets = await Ticket.find({ user: req.auth._id }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
-        res.status(200).json(tickets);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
-    }
-});
-
-// Route pour obtenir tous les tickets (admins)
-router.get('/', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-        const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id } })
-            .populate('user', 'username email')
-            .populate('messages.sender', 'username profilePicture')
-            .populate('assignedAdmin', 'username')
-            .sort({ updatedAt: -1 });
-        res.status(200).json(tickets);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
@@ -103,8 +78,11 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
         ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
-        if (senderRole === 'admin') ticket.isReadByUser = false;
-        else ticket.isReadByAdmin = false;
+        if (senderRole === 'admin') {
+            ticket.isReadByUser = false;
+        } else {
+            ticket.readByAdmin = false; // CORRECTION : On utilise "readByAdmin"
+        }
 
         await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
@@ -124,8 +102,11 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
-        if (req.auth.role.includes('admin')) ticket.isReadByAdmin = true;
-        else ticket.isReadByUser = true;
+        if (req.auth.role.includes('admin')) {
+            ticket.readByAdmin = true; // CORRECTION : On utilise "readByAdmin"
+        } else {
+            ticket.isReadByUser = true;
+        }
 
         await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
@@ -138,7 +119,34 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     }
 });
 
-// Route pour masquer un ticket pour un admin
+
+// ... (les autres routes comme GET /my-tickets, GET /, PATCH /:ticketId/hide ne sont pas affectées et restent les mêmes) ...
+
+// GET /my-tickets
+router.get('/my-tickets', isAuthenticated, async (req, res) => {
+    try {
+        const tickets = await Ticket.find({ user: req.auth._id }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
+        res.status(200).json(tickets);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// GET / (pour admins)
+router.get('/', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+        const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id } })
+            .populate('user', 'username email')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username')
+            .sort({ updatedAt: -1 });
+        res.status(200).json(tickets);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// PATCH /:ticketId/hide
 router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -149,5 +157,6 @@ router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 
 module.exports = router;

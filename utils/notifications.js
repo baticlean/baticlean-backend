@@ -1,4 +1,4 @@
-// Fichier : backend/utils/notifications.js (Version Finale et Complète)
+// Fichier : backend/utils/notifications.js (Version Définitive)
 
 const User = require('../models/User.model');
 const Ticket = require('../models/Ticket.model');
@@ -22,36 +22,22 @@ const broadcastToAdmins = async (req, event, payload) => {
 
 const broadcastNotificationCounts = async (req) => {
     try {
-        console.log("--- Lancement du calcul des compteurs ---");
+        // --- CORRECTION DÉFINITIVE DES CHAMPS DE LA BASE DE DONNÉES ---
+        // Ces noms de champs sont maintenant identiques à ceux de votre fichier notification.routes.js
 
-        // Calcul 1 : Tickets
-        // On compte les tickets non lus par un admin et qui ne sont pas "Résolu"
-        const unreadTickets = await Ticket.countDocuments({ isReadByAdmin: false, status: { $ne: 'Résolu' } });
-        console.log(`-> Compteur Tickets trouvé : ${unreadTickets}`);
-
-        // Calcul 2 : Réservations
-        // On compte les réservations avec le statut "En attente"
-        const pendingBookings = await Booking.countDocuments({ status: 'En attente' });
-        console.log(`-> Compteur Réservations trouvé : ${pendingBookings}`);
-
-        // Calcul 3 : Réclamations
-        // On compte les réclamations qui n'ont pas encore été traitées
-        const newReclamations = await Reclamation.countDocuments({ isHandled: false });
-        console.log(`-> Compteur Réclamations trouvé : ${newReclamations}`);
-
-        // Calcul 4 : Nouveaux Utilisateurs
-        // On compte les utilisateurs qui ne sont pas encore vérifiés
-        const newUsers = await User.countDocuments({ isVerified: false });
-        console.log(`-> Compteur Utilisateurs trouvé : ${newUsers}`);
+        const userCount = await User.countDocuments({ isNew: true });
+        const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
+        const bookingCount = await Booking.countDocuments({ readByAdmin: false });
+        const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
 
         const counts = {
-            tickets: unreadTickets,
-            bookings: pendingBookings,
-            reclamations: newReclamations,
-            users: newUsers
+            users: userCount,
+            tickets: ticketCount,
+            bookings: bookingCount,
+            reclamations: reclamationCount
         };
 
-        console.log("🚀 [Serveur] Envoi de l'objet de compteurs complet :", counts);
+        console.log("🚀 [Serveur] Envoi de l'objet de compteurs unifié :", counts);
         await broadcastToAdmins(req, 'notificationCountsUpdated', counts);
 
     } catch (error) {

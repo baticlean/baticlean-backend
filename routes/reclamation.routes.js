@@ -1,4 +1,4 @@
-// Fichier : backend/routes/reclamation.routes.js
+// Fichier : backend/routes/reclamation.routes.js (Version Finale Complétée)
 const express = require('express');
 const router = express.Router();
 const Reclamation = require('../models/Reclamation.model');
@@ -11,11 +11,20 @@ router.post('/', isAuthenticated, async (req, res) => {
         if (!message) {
             return res.status(400).json({ message: 'Le message ne peut pas être vide.' });
         }
-        const newReclamation = await Reclamation.create({ user: req.auth._id, message, screenshots, isHandled: false });
+
+        // ✅ AJOUT : Marquer la nouvelle réclamation comme non lue par l'admin
+        const newReclamation = await Reclamation.create({ 
+            user: req.auth._id, 
+            message, 
+            screenshots, 
+            isHandled: false,
+            readByAdmin: false
+        });
+
         const populatedReclamation = await Reclamation.findById(newReclamation._id).populate('user', 'username email status');
 
         req.io.emit('newReclamation', populatedReclamation);
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+        await broadcastNotificationCounts(req);
 
         res.status(201).json(populatedReclamation);
     } catch (error) {
@@ -42,7 +51,7 @@ router.patch('/:reclamationId/hide', isAuthenticated, isAdmin, async (req, res) 
         if (!updatedReclamation) {
             return res.status(404).json({ message: 'Réclamation non trouvée.' });
         }
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+        await broadcastNotificationCounts(req);
         res.status(200).json({ message: 'Réclamation masquée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -52,11 +61,20 @@ router.patch('/:reclamationId/hide', isAuthenticated, isAdmin, async (req, res) 
 router.patch('/:reclamationId/handle', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { reclamationId } = req.params;
-        const updatedReclamation = await Reclamation.findByIdAndUpdate(reclamationId, { isHandled: true }, { new: true });
+
+        // ✅ AJOUT : Marquer comme lue quand l'admin traite la réclamation
+        const updateQuery = { 
+            isHandled: true,
+            readByAdmin: true
+        };
+
+        const updatedReclamation = await Reclamation.findByIdAndUpdate(reclamationId, updateQuery, { new: true });
+
         if (!updatedReclamation) {
             return res.status(404).json({ message: 'Réclamation non trouvée.' });
         }
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+
+        await broadcastNotificationCounts(req);
         res.status(200).json(updatedReclamation);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });

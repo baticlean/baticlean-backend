@@ -1,4 +1,4 @@
-// Fichier : backend/routes/booking.routes.js
+// Fichier : backend/routes/booking.routes.js (Version Finale Complétée)
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
@@ -12,11 +12,23 @@ router.post('/', isAuthenticated, async (req, res) => {
         if (!serviceId || !bookingDate || !bookingTime || !address || !phoneNumber) {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
-        const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, bookingTime, address, phoneNumber, notes });
+
+        // ✅ AJOUT : Marquer la nouvelle réservation comme non lue par l'admin
+        const newBooking = await Booking.create({ 
+            service: serviceId, 
+            user: userId, 
+            bookingDate, 
+            bookingTime, 
+            address, 
+            phoneNumber, 
+            notes,
+            readByAdmin: false 
+        });
+
         const populatedBooking = await Booking.findById(newBooking._id).populate('user', 'username email').populate('service', 'title');
 
         req.io.emit('newBooking', populatedBooking);
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+        await broadcastNotificationCounts(req);
 
         res.status(201).json(populatedBooking);
     } catch (error) {
@@ -50,11 +62,21 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
             return res.status(400).json({ message: 'Statut invalide.' });
         }
-        const updatedBooking = await Booking.findByIdAndUpdate(bookingId, { status, $push: { timeline: { status } } }, { new: true }).populate('user', 'username').populate('service', 'title');
+
+        // ✅ AJOUT : Marquer comme lue quand l'admin change le statut
+        const updateQuery = { 
+            status, 
+            readByAdmin: true, 
+            $push: { timeline: { status } } 
+        };
+
+        const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true }).populate('user', 'username').populate('service', 'title');
+
         if (!updatedBooking) {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+
+        await broadcastNotificationCounts(req);
         res.status(200).json(updatedBooking);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -69,7 +91,7 @@ router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         req.io.emit('bookingDeleted', { _id: bookingId });
-        await broadcastNotificationCounts(req); // CORRECTION ICI
+        await broadcastNotificationCounts(req);
         res.status(200).json({ message: 'Réservation supprimée avec succès.' });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
