@@ -104,13 +104,16 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
         ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
+        // Nouveau code corrigé
         if (senderRole === 'admin') {
             ticket.isReadByUser = false;
+            // On s'assure que l'admin qui envoie le message est bien dans la liste des lecteurs.
+            // .addToSet évite les doublons.
+            ticket.readByAdmins.addToSet(req.auth._id); 
         } else {
             // Si un user répond, la notif redevient non lue pour TOUS les admins
             ticket.readByAdmins = [];
         }
-
         await ticket.save();
         const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
 
