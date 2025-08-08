@@ -1,30 +1,27 @@
-// Fichier : backend/routes/auth.routes.js
-
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // Outil Node.js pour générer des tokens sécurisés
+const crypto = require('crypto'); // Ajout pour le mot de passe oublié
 const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
 const rateLimit = require('express-rate-limit');
-const SibApiV3Sdk = require('sib-api-v3-sdk'); // SDK de Brevo
+const SibApiV3Sdk = require('sib-api-v3-sdk'); // Ajout pour Brevo
 
-// ✅ CONFIGURATION DE BREVO (TRANSACTIONAL EMAILS)
+// CONFIGURATION DE BREVO
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
 let apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY; // Assurez-vous que BREVO_API_KEY est dans vos secrets
+apiKey.apiKey = process.env.BREVO_API_KEY;
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
-
-// Sécurité anti-force-brute
+// LIMITEUR DE REQUÊTES
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
     message: { 
-        error: 'Trop de tentatives de connexion.',
+        error: 'Trop de tentatives.',
         message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.'
     },
     keyGenerator: (req, res) => {
@@ -32,7 +29,7 @@ const authLimiter = rateLimit({
     },
 });
 
-// La route /register reste inchangée
+// ROUTE /register (inchangée)
 router.post('/register', authLimiter, async (req, res) => {
     try {
         const { username, email, password, phoneNumber } = req.body;
@@ -67,7 +64,7 @@ router.post('/register', authLimiter, async (req, res) => {
     }
 });
 
-// La route /login reste inchangée
+// ROUTE /login (inchangée)
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -101,41 +98,30 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE
+// ✅ NOUVELLE ROUTE : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE (PROTÉGÉE)
 router.post('/forgot-password', authLimiter, async (req, res) => {
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
 
         if (!user) {
-            // Pour la sécurité, on ne confirme jamais si un email existe ou non.
             return res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
         }
 
-        // 1. Créer un token de réinitialisation
         const resetToken = crypto.randomBytes(20).toString('hex');
-
-        // On ne stocke que la version hashée du token en base de données (plus sûr)
         user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.passwordResetExpires = Date.now() + 3600000; // Valide 1 heure
+        user.passwordResetExpires = Date.now() + 3600000; // 1 heure
         await user.save({ validateBeforeSave: false });
 
-        // 2. Envoyer l'email
         const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
         const sendSmtpEmail = {
             to: [{ email: user.email, name: user.username }],
             sender: {
                 name: 'BATIClean Support',
-                email: 'baticlean225@gmail.com', // Doit être un expéditeur validé sur Brevo
+                email: 'baticlean225@gmail.com',
             },
             subject: 'Réinitialisation de votre mot de passe BATIClean',
-            htmlContent: `<html><body>
-                <p>Bonjour ${user.username},</p>
-                <p>Vous avez demandé une réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour continuer :</p>
-                <a href="${resetURL}" target="_blank">Réinitialiser mon mot de passe</a>
-                <p>Ce lien expirera dans une heure.</p>
-                <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
-            </body></html>`,
+            htmlContent: `<html><body><p>Bonjour ${user.username},</p><p>Cliquez sur le lien suivant pour réinitialiser votre mot de passe :</p><a href="${resetURL}" target="_blank">Réinitialiser mon mot de passe</a><p>Ce lien expirera dans une heure.</p></body></html>`,
         };
 
         await apiInstance.sendTransacEmail(sendSmtpEmail);
@@ -147,13 +133,11 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     }
 });
 
-
 // ✅ NOUVELLE ROUTE : RÉINITIALISATION EFFECTIVE DU MOT DE PASSE
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
-        // On cherche l'utilisateur avec le bon token, qui n'a pas expiré
         const user = await User.findOne({ 
             passwordResetToken: hashedToken,
             passwordResetExpires: { $gt: Date.now() }
@@ -163,7 +147,6 @@ router.post('/reset-password/:token', async (req, res) => {
             return res.status(400).json({ message: 'Le lien est invalide ou a expiré.' });
         }
 
-        // On vérifie que le nouveau mot de passe est valide
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
@@ -172,7 +155,6 @@ router.post('/reset-password/:token', async (req, res) => {
             });
         }
 
-        // Mise à jour du mot de passe
         const salt = await bcrypt.genSalt(12);
         user.passwordHash = await bcrypt.hash(password, salt);
         user.passwordResetToken = undefined;
@@ -185,6 +167,5 @@ router.post('/reset-password/:token', async (req, res) => {
         res.status(500).json({ message: 'Erreur lors de la réinitialisation du mot de passe.' });
     }
 });
-
 
 module.exports = router;
