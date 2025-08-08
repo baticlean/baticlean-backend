@@ -1,4 +1,4 @@
-// Fichier : backend/routes/auth.routes.js (Version Finale Corrigée)
+// Fichier : backend/routes/auth.routes.js (Version avec blocage renforcé)
 
 const express = require('express');
 const router = express.Router();
@@ -6,17 +6,40 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
+const rateLimit = require('express-rate-limit');
 
-router.post('/register', async (req, res) => {
+// ✅ SÉCURITÉ ANTI-FORCE-BRUTE AMÉLIORÉE
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // Fenêtre de 15 minutes
+    max: 5, // ✅ Limite chaque IP à 5 requêtes sur cette fenêtre
+    standardHeaders: true,
+    legacyHeaders: false,
+    // ✅ Message adapté pour le blocage temporaire
+    message: { 
+        error: 'Trop de tentatives de connexion.',
+        message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.'
+    },
+});
+
+router.post('/register', authLimiter, async (req, res) => {
     try {
         const { username, email, password, phoneNumber } = req.body;
         if (!username || !email || !password || !phoneNumber) {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
+
+        const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
+        if (!passwordRegex.test(password)) {
+            return res.status(400).json({ 
+                message: 'Le mot de passe ne respecte pas les critères de sécurité. Il doit contenir au moins 9 caractères, dont 3 chiffres, 1 caractère spécial et des lettres.' 
+            });
+        }
+
         const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
         if (userExists) {
             return res.status(400).json({ message: 'Email ou numéro de téléphone déjà utilisé.' });
         }
+
         const salt = await bcrypt.genSalt(12);
         const passwordHash = await bcrypt.hash(password, salt);
 
@@ -32,7 +55,7 @@ router.post('/register', async (req, res) => {
     }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
         if (!login || !password) { return res.status(400).json({ message: 'Tous les champs sont requis.' }); }
@@ -43,7 +66,6 @@ router.post('/login', async (req, res) => {
         const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
         if (!isPasswordCorrect) { return res.status(401).json({ message: 'Identifiant ou mot de passe incorrect.' }); }
 
-        // ✅ CORRECTION ICI : On retire "isNew" qui n'existe plus dans le modèle User
         const { _id, username, role, email, status, profilePicture, phoneNumber } = user;
         const payload = { _id, email, username, role, status, profilePicture, phoneNumber };
 
