@@ -1,3 +1,5 @@
+// Fichier : backend/routes/notification.routes.js (Version finale avec lecture par type)
+
 const express = require('express');
 const router = express.Router();
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
@@ -6,54 +8,55 @@ const User = require('../models/User.model');
 const Ticket = require('../models/Ticket.model');
 const Booking = require('../models/Booking.model');
 const Reclamation = require('../models/Reclamation.model');
+const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// ROUTE 1 : Compter les notifications non lues
+// ROUTE 1 : Compter les notifications non lues pour l'admin actuel (inchangée)
 router.get('/counts', isAuthenticated, isAdmin, async (req, res) => {
-  try {
-    const userCount = await User.countDocuments({ isNew: true });
-    const ticketCount = await Ticket.countDocuments({ readByAdmin: false });
-    // --- AJUSTEMENT AJOUTÉ ICI ---
-    const bookingCount = await Booking.countDocuments({ readByAdmin: false });
-    const reclamationCount = await Reclamation.countDocuments({ readByAdmin: false });
+    try {
+        const adminId = req.auth._id;
 
-    res.status(200).json({
-      users: userCount,
-      tickets: ticketCount,
-      bookings: bookingCount,
-      reclamations: reclamationCount,
-    });
-  } catch (error) {
-    console.error("Erreur lors du comptage des notifications:", error);
-    res.status(500).json({ message: "Erreur interne du serveur." });
-  }
+        const userCount = await User.countDocuments({ readByAdmins: { $ne: adminId } });
+        const ticketCount = await Ticket.countDocuments({ readByAdmins: { $ne: adminId } });
+        const bookingCount = await Booking.countDocuments({ readByAdmins: { $ne: adminId } });
+        const reclamationCount = await Reclamation.countDocuments({ readByAdmins: { $ne: adminId } });
+
+        res.status(200).json({
+            users: userCount,
+            tickets: ticketCount,
+            bookings: bookingCount,
+            reclamations: reclamationCount,
+        });
+    } catch (error) {
+        console.error("Erreur lors du comptage des notifications:", error);
+        res.status(500).json({ message: "Erreur interne du serveur." });
+    }
 });
 
-// ROUTE 2 : Marquer les notifications comme lues
+// ✅ NOUVELLE ROUTE : Marquer une catégorie de notifications comme lue pour l'admin qui clique
 router.patch('/:type/mark-as-read', isAuthenticated, isAdmin, async (req, res) => {
     const { type } = req.params;
-    let updatePromise;
+    const adminId = req.auth._id;
+    let Model;
 
     switch (type) {
-        case 'users':
-            updatePromise = User.updateMany({ isNew: true }, { $set: { isNew: false } });
-            break;
-        case 'tickets':
-            updatePromise = Ticket.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
-            break;
-        case 'reclamations':
-            updatePromise = Reclamation.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
-            break;
-        // --- AJUSTEMENT AJOUTÉ ICI ---
-        case 'bookings':
-            updatePromise = Booking.updateMany({ readByAdmin: false }, { $set: { readByAdmin: true } });
-            break;
+        case 'users': Model = User; break;
+        case 'tickets': Model = Ticket; break;
+        case 'bookings': Model = Booking; break;
+        case 'reclamations': Model = Reclamation; break;
         default:
             return res.status(400).json({ message: 'Type de notification inconnu.' });
     }
 
     try {
-        await updatePromise;
-        res.status(200).json({ message: `Notifications de type '${type}' marquées comme lues.` });
+        // Ajoute l'ID de l'admin à la liste des lecteurs pour tous les documents de ce type
+        await Model.updateMany(
+            { readByAdmins: { $ne: adminId } },
+            { $addToSet: { readByAdmins: adminId } }
+        );
+
+        // Rediffuse les compteurs mis à jour
+        await broadcastNotificationCounts(req);
+        res.status(200).json({ message: `Notifications de type '${type}' marquées comme lues pour vous.` });
     } catch (error) {
         console.error(`Erreur lors de la mise à jour des notifications de type '${type}':`, error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
