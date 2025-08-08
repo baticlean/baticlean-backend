@@ -94,8 +94,7 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// ✅✅✅ CORRECTION PRINCIPALE ET FINALE ✅✅✅
-// Route pour ajouter un message à un ticket existant (version atomique)
+// Route pour ajouter un message à un ticket existant
 router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -104,54 +103,47 @@ router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
         const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
 
         const newMessage = { sender: senderId, text, senderType: senderRole };
-
         let updateQuery;
 
         if (senderRole === 'admin') {
-            // Si l'admin répond :
-            // 1. Ajoute le message
-            // 2. Met le ticket en "non lu" pour le CLIENT
-            // 3. S'assure que l'admin actuel est dans la liste des lecteurs (pour ne pas se notifier lui-même)
+            // L'admin répond : on met à jour le ticket en une seule fois
             updateQuery = {
                 $push: { messages: newMessage },
-                $set: { isReadByUser: false },
-                $addToSet: { readByAdmins: senderId }
+                $set: { isReadByUser: false }, // Notifie le client
+                $addToSet: { readByAdmins: senderId } // S'assure que l'admin actuel a lu le message
             };
         } else {
-            // Si le client répond :
-            // 1. Ajoute le message
-            // 2. Vide la liste des lecteurs admin pour que TOUS les admins soient notifiés
+            // Le client répond : on notifie tous les admins
             updateQuery = {
                 $push: { messages: newMessage },
                 $set: { readByAdmins: [] }
             };
         }
 
-        // On exécute la mise à jour atomique
+        // On exécute la mise à jour et on attend le résultat
         const ticketAfterUpdate = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
 
         if (!ticketAfterUpdate) {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
 
-        // On peuple le ticket mis à jour pour l'envoyer au frontend
+        // On peuple le ticket pour l'envoyer au frontend
         const populatedTicket = await Ticket.findById(ticketAfterUpdate._id)
             .populate('user', 'username')
             .populate('messages.sender', 'username profilePicture')
             .populate('assignedAdmin', 'username');
 
-        // On notifie les clients
+        // On envoie les notifications
         req.io.emit('ticketUpdated', populatedTicket);
-        await broadcastNotificationCounts(req);
+        await broadcastNotificationCounts(req); // Cette fonction est maintenant appelée APRÈS la mise à jour
 
         res.status(200).json(populatedTicket);
 
     } catch (error) {
-        console.error("Erreur en ajoutant un message:", error);
+        console.error("Erreur lors de l'ajout d'un message:", error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 
 // Route pour marquer un ticket comme lu
 router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
