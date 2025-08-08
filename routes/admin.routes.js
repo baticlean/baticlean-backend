@@ -1,18 +1,19 @@
+// Fichier : backend/routes/admin.routes.js (Version Finale Corrigée)
+
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
 const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// Route pour obtenir tous les utilisateurs (maintenant avec recherche)
+// Route pour obtenir tous les utilisateurs (inchangée)
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
-    const { search } = req.query; // On récupère le terme de recherche depuis l'URL
+    const { search } = req.query;
     let query = { role: { $ne: 'superAdmin' } };
 
-    // Si un terme de recherche est fourni, on construit la requête de filtre
     if (search) {
-      const regex = new RegExp(search, 'i'); // 'i' pour une recherche insensible à la casse
+      const regex = new RegExp(search, 'i');
       query.$or = [
         { username: regex },
         { email: regex },
@@ -21,7 +22,7 @@ router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
     }
 
     const users = await User.find(query)
-        .sort({ createdAt: -1 }) // On garde le tri pour avoir les plus récents en premier
+        .sort({ createdAt: -1 })
         .select('-passwordHash');
 
     res.status(200).json(users);
@@ -40,7 +41,9 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
     if (!updatedUser) {
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
+
+    // ✅ CORRECTION : On retire "isNew" du payload du token car il n'existe plus
+    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, phoneNumber: updatedUser.phoneNumber };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
     req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
@@ -63,7 +66,8 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
     }
 
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, isNew: updatedUser.isNew };
+    // ✅ CORRECTION : On retire "isNew" du payload du token car il n'existe plus
+    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, phoneNumber: updatedUser.phoneNumber };
     const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
     console.log(`[BACKEND] Envoi de l'événement 'userUpdated' à TOUS les clients pour l'utilisateur ${userId}`);
