@@ -1,4 +1,5 @@
-// Fichier : backend/routes/ticket.routes.js (Version finale avec notifications individuelles)
+// Fichier : backend/routes/ticket.routes.js
+
 const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
@@ -24,7 +25,7 @@ router.post('/', isAuthenticated, async (req, res) => {
         const newTicket = await Ticket.create({
             user: userId,
             messages: formattedMessages,
-            readByAdmins: [] // Vide à la création
+            readByAdmins: []
         });
 
         const populatedTicket = await Ticket.findById(newTicket._id).populate('user', 'username email');
@@ -93,37 +94,64 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// Route pour ajouter un message à un ticket existant
+// ✅✅✅ CORRECTION PRINCIPALE ET FINALE ✅✅✅
+// Route pour ajouter un message à un ticket existant (version atomique)
 router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const { text } = req.body;
-        const ticket = await Ticket.findById(ticketId);
-        if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
-
+        const senderId = req.auth._id;
         const senderRole = req.auth.role.includes('admin') ? 'admin' : 'user';
-        ticket.messages.push({ sender: req.auth._id, text, senderType: senderRole });
 
-        // Nouveau code corrigé
+        const newMessage = { sender: senderId, text, senderType: senderRole };
+
+        let updateQuery;
+
         if (senderRole === 'admin') {
-            ticket.isReadByUser = false;
-            // On s'assure que l'admin qui envoie le message est bien dans la liste des lecteurs.
-            // .addToSet évite les doublons.
-            ticket.readByAdmins.addToSet(req.auth._id); 
+            // Si l'admin répond :
+            // 1. Ajoute le message
+            // 2. Met le ticket en "non lu" pour le CLIENT
+            // 3. S'assure que l'admin actuel est dans la liste des lecteurs (pour ne pas se notifier lui-même)
+            updateQuery = {
+                $push: { messages: newMessage },
+                $set: { isReadByUser: false },
+                $addToSet: { readByAdmins: senderId }
+            };
         } else {
-            // Si un user répond, la notif redevient non lue pour TOUS les admins
-            ticket.readByAdmins = [];
+            // Si le client répond :
+            // 1. Ajoute le message
+            // 2. Vide la liste des lecteurs admin pour que TOUS les admins soient notifiés
+            updateQuery = {
+                $push: { messages: newMessage },
+                $set: { readByAdmins: [] }
+            };
         }
-        await ticket.save();
-        const updatedTicket = await Ticket.findById(ticketId).populate('user', 'username').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username');
 
-        req.io.emit('ticketUpdated', updatedTicket);
+        // On exécute la mise à jour atomique
+        const ticketAfterUpdate = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
+
+        if (!ticketAfterUpdate) {
+            return res.status(404).json({ message: 'Ticket non trouvé.' });
+        }
+
+        // On peuple le ticket mis à jour pour l'envoyer au frontend
+        const populatedTicket = await Ticket.findById(ticketAfterUpdate._id)
+            .populate('user', 'username')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username');
+
+        // On notifie les clients
+        req.io.emit('ticketUpdated', populatedTicket);
         await broadcastNotificationCounts(req);
-        res.status(200).json(updatedTicket);
+
+        res.status(200).json(populatedTicket);
+
     } catch (error) {
+        console.error("Erreur en ajoutant un message:", error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 
 // Route pour marquer un ticket comme lu
 router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
