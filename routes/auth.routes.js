@@ -1,4 +1,4 @@
-// Fichier : backend/routes/auth.routes.js (Version avec blocage renforcé)
+// Fichier : backend/routes/auth.routes.js
 
 const express = require('express');
 const router = express.Router();
@@ -8,16 +8,21 @@ const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
 const rateLimit = require('express-rate-limit');
 
-// ✅ SÉCURITÉ ANTI-FORCE-BRUTE AMÉLIORÉE
+// ✅ SÉCURITÉ ANTI-FORCE-BRUTE AMÉLIORÉE ET CIBLÉE
 const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // Fenêtre de 15 minutes
-    max: 5, // ✅ Limite chaque IP à 5 requêtes sur cette fenêtre
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    // ✅ Message adapté pour le blocage temporaire
     message: { 
         error: 'Trop de tentatives de connexion.',
         message: 'Votre accès est temporairement bloqué pour des raisons de sécurité. Veuillez patienter 15 minutes avant de réessayer.'
+    },
+    // ✅ LA CORRECTION MAGIQUE EST ICI
+    // On dit au limiteur de créer une clé unique par IP ET par identifiant de connexion.
+    // Cela empêche de bloquer injustement d'autres utilisateurs sur la même connexion.
+    keyGenerator: (req, res) => {
+        return req.ip + req.body.login;
     },
 });
 
