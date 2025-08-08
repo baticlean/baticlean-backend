@@ -1,4 +1,4 @@
-// Fichier : backend/utils/notifications.js (Version Finale Corrigée)
+// Fichier : backend/utils/notifications.js (Version Finale et Complète)
 
 const User = require('../models/User.model');
 const Ticket = require('../models/Ticket.model');
@@ -9,7 +9,6 @@ const broadcastToAdmins = async (req, event, payload) => {
     try {
         const { io, onlineUsers } = req;
         const admins = await User.find({ role: { $in: ['admin', 'superAdmin'] } });
-
         admins.forEach(admin => {
             const adminSocketId = onlineUsers[admin._id.toString()];
             if (adminSocketId) {
@@ -23,23 +22,27 @@ const broadcastToAdmins = async (req, event, payload) => {
 
 const broadcastNotificationCounts = async (req) => {
     try {
-        // --- CORRECTION ET FIABILISATION DES CALCULS ---
+        console.log("--- Lancement du calcul des compteurs ---");
 
-        // Le statut "En attente" semble correct pour votre modèle Booking
-        const pendingBookings = await Booking.countDocuments({ status: 'En attente' });
-
-        // Pour les tickets, on ne compte que ceux qui ne sont pas lus ET pas déjà résolus
+        // Calcul 1 : Tickets
+        // On compte les tickets non lus par un admin et qui ne sont pas "Résolu"
         const unreadTickets = await Ticket.countDocuments({ isReadByAdmin: false, status: { $ne: 'Résolu' } });
+        console.log(`-> Compteur Tickets trouvé : ${unreadTickets}`);
 
-        // Pour les réclamations, on vérifie si le champ 'isHandled' existe. S'il n'existe pas, on suppose qu'il n'y a pas de réclamations non traitées.
-        const newReclamations = Reclamation.schema.paths['isHandled'] 
-            ? await Reclamation.countDocuments({ isHandled: false }) 
-            : 0;
+        // Calcul 2 : Réservations
+        // On compte les réservations avec le statut "En attente"
+        const pendingBookings = await Booking.countDocuments({ status: 'En attente' });
+        console.log(`-> Compteur Réservations trouvé : ${pendingBookings}`);
 
-        // De même pour les utilisateurs non vérifiés.
-        const newUsers = User.schema.paths['isVerified'] 
-            ? await User.countDocuments({ isVerified: false }) 
-            : 0;
+        // Calcul 3 : Réclamations
+        // On compte les réclamations qui n'ont pas encore été traitées
+        const newReclamations = await Reclamation.countDocuments({ isHandled: false });
+        console.log(`-> Compteur Réclamations trouvé : ${newReclamations}`);
+
+        // Calcul 4 : Nouveaux Utilisateurs
+        // On compte les utilisateurs qui ne sont pas encore vérifiés
+        const newUsers = await User.countDocuments({ isVerified: false });
+        console.log(`-> Compteur Utilisateurs trouvé : ${newUsers}`);
 
         const counts = {
             tickets: unreadTickets,
@@ -48,13 +51,11 @@ const broadcastNotificationCounts = async (req) => {
             users: newUsers
         };
 
-        // "ESPION" CÔTÉ SERVEUR : Affiche l'objet complet qui va être envoyé
-        console.log("🚀 [Serveur] Envoi des compteurs mis à jour :", counts);
-
+        console.log("🚀 [Serveur] Envoi de l'objet de compteurs complet :", counts);
         await broadcastToAdmins(req, 'notificationCountsUpdated', counts);
 
     } catch (error) {
-        console.error("❌ Erreur lors du calcul et de la diffusion des compteurs:", error);
+        console.error("❌ Erreur critique lors du calcul des compteurs:", error);
     }
 };
 
