@@ -1,4 +1,5 @@
-// Fichier : backend/models/Ticket.model.js (Version avec notifications individuelles)
+// baticlean/baticlean-backend/baticlean-backend-42f3c9fe26e8b96f5f88e3569849f459bcc2c933/models/Ticket.model.js
+// Fichier : backend/models/Ticket.model.js (Version avec archivage)
 const { Schema, model } = require('mongoose');
 
 const messageSchema = new Schema({
@@ -41,9 +42,11 @@ const ticketSchema = new Schema(
       default: 'Ouvert',
     },
     isReadByUser: { type: Boolean, default: true },
-    // ✅ MODIFICATION : On remplace "isReadByAdmin" par une liste d'admins
     readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+    hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    // ✅ AJOUT : Champs pour l'archivage
+    archivedByUser: { type: Boolean, default: false },
+    archivedByAdmin: { type: Boolean, default: false }
   },
   {
     timestamps: true,
