@@ -41,39 +41,34 @@ router.delete('/:id', isAuthenticated, isAdmin, async (req, res) => {
   }
 });
 
-// === ✅ MODIFIÉ : AFFICHAGE DES SERVICES AVEC RECHERCHE ET FILTRES (Public) ===
+// === AFFICHAGE DES SERVICES AVEC RECHERCHE ET FILTRES (Public) ===
 router.get('/', async (req, res) => {
     try {
         const { search, category, sortBy } = req.query;
         let query = {};
-        let sortQuery = { createdAt: -1 }; // Tri par défaut : les plus récents
+        let sortQuery = { createdAt: -1 }; 
 
-        // 1. Filtre de recherche par mot-clé
         if (search) {
-            const regex = new RegExp(search, 'i'); // 'i' pour insensible à la casse
+            const regex = new RegExp(search, 'i');
             query.$or = [
                 { title: regex },
                 { description: regex }
             ];
         }
 
-        // 2. Filtre par catégorie
         if (category) {
             query.category = category;
         }
 
-        // 3. Logique de tri
         if (sortBy === 'popularity') {
-            // On trie par le nombre de likes (plus il y en a, plus c'est haut)
             sortQuery = { 'likes.length': -1, createdAt: -1 };
         } else if (sortBy === 'rating') {
-            // Une version plus avancée pourrait calculer la note moyenne et trier dessus.
-            // Pour l'instant, on se base sur le tri par défaut.
+            // Logique de tri par note à implémenter si besoin
         }
 
         const allServices = await Service.find(query)
             .populate('comments.user', 'username _id profilePicture')
-            .populate('reviews.user', 'username profilePicture') // On peuple aussi les avis
+            .populate('reviews.user', 'username profilePicture')
             .sort(sortQuery);
             
         res.status(200).json(allServices);
@@ -83,7 +78,7 @@ router.get('/', async (req, res) => {
 });
 
 
-// === GESTION LIKES & COMMENTAIRES (Inchangé) ===
+// === GESTION LIKES & COMMENTAIRES ===
 router.patch('/:id/like', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
@@ -105,14 +100,29 @@ router.patch('/:id/like', isAuthenticated, async (req, res) => {
   }
 });
 
+
+// ====================================================================
+// ✅ LA CORRECTION EST ICI
+// ====================================================================
 router.post('/:id/comment', isAuthenticated, async (req, res) => {
   try {
     const { id } = req.params;
-    const { text } = req.body;
+    // 1. On récupère `parentId` en plus de `text` depuis le corps de la requête
+    const { text, parentId } = req.body;
     const { _id: userId, username } = req.auth;
+
     if (!text) { return res.status(400).json({ message: 'Le commentaire ne peut pas être vide.' }); }
 
-    const newComment = { user: userId, username, text };
+    // 2. On crée l'objet commentaire en incluant la propriété `parent`
+    //    Si `parentId` n'est pas fourni (commentaire de 1er niveau), sa valeur sera `null`.
+    const newComment = { 
+      user: userId, 
+      username, 
+      text,
+      parent: parentId || null 
+    };
+
+    // 3. La suite de la logique est la même, elle pousse le nouvel objet (maintenant complet) dans le tableau.
     const updatedService = await Service.findByIdAndUpdate(
       id,
       { $push: { comments: { $each: [newComment], $position: 0 } } },
@@ -120,12 +130,16 @@ router.post('/:id/comment', isAuthenticated, async (req, res) => {
     ).populate('comments.user', 'username _id profilePicture');
 
     if (!updatedService) { return res.status(404).json({ message: 'Service non trouvé.' }); }
+    
     req.io.emit('serviceUpdated', updatedService);
     res.status(200).json(updatedService);
   } catch (error) {
+    console.error(error); // Affiche l'erreur dans la console du serveur pour le débogage
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
+// ====================================================================
+
 
 router.put('/:serviceId/comments/:commentId', isAuthenticated, async (req, res) => {
   try {
@@ -155,7 +169,9 @@ router.delete('/:serviceId/comments/:commentId', isAuthenticated, async (req, re
     if (comment.user.toString() !== userId && req.auth.role !== 'superAdmin') {
       return res.status(403).json({ message: "Action non autorisée." });
     }
-
+    
+    // Plutôt que de supprimer le commentaire, on pourrait aussi supprimer toutes ses réponses.
+    // Pour l'instant, la suppression simple suffit.
     await comment.deleteOne();
     await service.save();
     const updatedService = await Service.findById(serviceId).populate('comments.user', 'username _id profilePicture');
