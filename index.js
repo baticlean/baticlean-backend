@@ -5,14 +5,29 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
-const helmet = require('helmet'); // ✅ 1. IMPORTER HELMET
-const { initializeSocket, getIO, getOnlineUsers } = require('./socketManager'); // On importe depuis notre nouveau fichier
+const helmet = require('helmet');
+const { initializeSocket, getIO, getOnlineUsers } = require('./socketManager');
 
 const app = express();
 const server = http.createServer(app);
 
+// ====================================================================
+// ✅ DÉBUT DE L'AJOUT
+// On crée dynamiquement la liste des origines autorisées à partir du .env
+// ====================================================================
+const allowedOrigins = [];
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
+// ====================================================================
+// ✅ FIN DE L'AJOUT
+// ====================================================================
+
 const corsOptions = {
-    origin: ['http://localhost:5173', 'https://ton-frontend-en-production.com'], // Mettez ici l'URL de votre site en production
+    origin: allowedOrigins, // Utilise maintenant la liste créée dynamiquement
     methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     credentials: true,
     allowedHeaders: "Origin,X-Requested-With,Content-Type,Accept,Authorization"
@@ -50,8 +65,6 @@ app.use('/api/tickets', require('./routes/ticket.routes.js'));
 app.use('/api/bookings', require('./routes/booking.routes.js'));
 app.use('/api/reclamations', require('./routes/reclamation.routes.js'));
 app.use('/api/notifications', require('./routes/notification.routes.js'));
-
-// ✅ AJOUTEZ CETTE LIGNE
 app.use('/api/config', require('./routes/config.routes.js'));
 
 // NOUVEAU : On ajoute les routes de maintenance
