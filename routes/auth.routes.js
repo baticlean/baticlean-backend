@@ -31,6 +31,7 @@ const authLimiter = rateLimit({
     },
 });
 
+// Route d'inscription (inchangée)
 router.post('/register', 
     authLimiter, 
     [
@@ -69,6 +70,7 @@ router.post('/register',
     }
 );
 
+// Route de connexion (inchangée)
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -96,9 +98,27 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ MODIFIÉ : Route de mot de passe oublié améliorée
+
+// ===================================================================
+// ## GESTION DE LA MAINTENANCE POUR "MOT DE PASSE OUBLIÉ" ##
+// ===================================================================
 router.post('/forgot-password', authLimiter, async (req, res) => {
-    try {
+
+    // --- MODE MAINTENANCE (Actuellement ACTIVÉ) ---
+    // Le code s'arrête ici et renvoie le message de maintenance.
+    return res.status(503).json({
+        message: "Cette fonctionnalité est actuellement en cours de maintenance. Veuillez réessayer plus tard."
+    });
+
+
+    
+    // --- MODE OPÉRATIONNEL (Actuellement DÉSACTIVÉ) ---
+    //
+    // Pour ACTIVER la fonctionnalité (désactiver la maintenance) :
+    // 1. Mettez le bloc de code ci-dessus (return res.status...) en commentaire en ajoutant `/*` avant et `*/` après.
+    // 2. Supprimez les marques de commentaire `/*` et `*/` qui entourent ce bloc.
+    //
+   try {
         const { email } = req.body;
         const user = await User.findOne({ email });
 
@@ -108,13 +128,11 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 
         const resetToken = crypto.randomBytes(20).toString('hex');
         user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        // MODIFIÉ : Expiration réglée à 15 minutes
         user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
         await user.save({ validateBeforeSave: false });
 
         const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
 
-        // MODIFIÉ : Contenu de l'email amélioré avec un bouton et des emojis
         const sendSmtpEmail = {
             to: [{ email: user.email, name: user.username }],
             sender: {
@@ -143,26 +161,21 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
 });
 
 
-// ✅ MODIFIÉ : Route de réinitialisation avec messages d'erreur spécifiques
+// Route de réinitialisation (inchangée)
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
-        // NOUVEAU : Logique de vérification améliorée
-        // 1. On cherche d'abord un utilisateur avec ce token, même s'il a expiré
         const user = await User.findOne({ passwordResetToken: hashedToken });
 
-        // 2. Si aucun utilisateur n'est trouvé, le lien est invalide ou a déjà été utilisé
         if (!user) {
             return res.status(400).json({ message: 'Ce lien est invalide ou a déjà été utilisé.' });
         }
 
-        // 3. Si l'utilisateur est trouvé, on vérifie si le token a expiré
         if (Date.now() > user.passwordResetExpires) {
             return res.status(400).json({ message: "Le lien n'est plus valide car le délai d'utilisation est passé. Veuillez en demander un autre." });
         }
 
-        // Si tout est bon, on continue...
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
@@ -173,7 +186,6 @@ router.post('/reset-password/:token', async (req, res) => {
 
         const salt = await bcrypt.genSalt(12);
         user.passwordHash = await bcrypt.hash(password, salt);
-        // On invalide le token pour qu'il ne soit plus utilisable
         user.passwordResetToken = undefined;
         user.passwordResetExpires = undefined;
         await user.save();
