@@ -2,12 +2,20 @@
 
 const { Schema, model } = require('mongoose');
 
+// Schéma pour les pièces jointes (images, pdf, etc.)
 const attachmentSchema = new Schema({
   url: { type: String, required: true },
   fileName: { type: String, required: true },
   fileType: { type: String, required: true },
 }, { _id: false });
 
+// Schéma pour les réactions emoji
+const reactionSchema = new Schema({
+    emoji: { type: String, required: true },
+    users: [{ type: Schema.Types.ObjectId, ref: 'User' }]
+}, { _id: false });
+
+// Schéma pour chaque message individuel
 const messageSchema = new Schema({
   sender: { 
     type: Schema.Types.ObjectId, 
@@ -23,14 +31,23 @@ const messageSchema = new Schema({
     type: String,
   },
   attachments: [attachmentSchema],
-  // ✅ NOUVEAU : On ajoute un champ pour savoir qui a lu le message
-  // Ce sera un tableau contenant l'ID de l'utilisateur qui a lu.
   readBy: [{
       type: Schema.Types.ObjectId,
       ref: 'User'
-  }]
+  }],
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  // On ajoute le champ pour les emojis ici
+  reactions: [reactionSchema]
 }, { timestamps: true });
 
+// Schéma principal pour un ticket (une conversation)
 const ticketSchema = new Schema(
   {
     user: {

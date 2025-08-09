@@ -6,9 +6,8 @@ const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// NOUVEAU : On importe notre configuration d'upload de fichiers
+// On importe notre configuration d'upload de fichiers
 const uploader = require('../config/cloudinary.config.js');
-
 
 // Route pour créer un nouveau ticket (inchangée)
 router.post('/', isAuthenticated, async (req, res) => {
@@ -115,7 +114,7 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 
-// ✅ MODIFIÉ : Route pour ajouter un message, gère maintenant les fichiers
+// MODIFIÉ : Route pour ajouter un message, gère maintenant les fichiers
 router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -123,12 +122,10 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
         const senderId = req.auth._id;
         const isSenderAdmin = (req.auth.role === 'admin' || req.auth.role === 'superAdmin');
 
-        // On vérifie qu'il y a au moins du texte ou un fichier
         if (!text && (!req.files || req.files.length === 0)) {
             return res.status(400).json({ message: 'Un message ne peut être vide (texte ou fichier requis).' });
         }
 
-        // On formate les fichiers reçus pour les ajouter au message
         const attachments = req.files ? req.files.map(file => ({
             url: file.path,
             fileName: file.originalname,
@@ -137,30 +134,20 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
 
         const newMessage = { 
             sender: senderId, 
-            text: text || '', // Le texte est maintenant optionnel
+            text: text || '',
             senderType: isSenderAdmin ? 'admin' : 'user',
-            attachments // On ajoute les pièces jointes
+            attachments
         };
 
         let updateQuery;
         if (isSenderAdmin) {
-            updateQuery = {
-                $push: { messages: newMessage },
-                $set: { isReadByUser: false },
-                $addToSet: { readByAdmins: senderId }
-            };
+            updateQuery = { $push: { messages: newMessage }, $set: { isReadByUser: false }, $addToSet: { readByAdmins: senderId } };
         } else {
-            updateQuery = {
-                $push: { messages: newMessage },
-                $set: { readByAdmins: [] }
-            };
+            updateQuery = { $push: { messages: newMessage }, $set: { readByAdmins: [] } };
         }
 
         const ticketAfterUpdate = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
-
-        if (!ticketAfterUpdate) {
-            return res.status(404).json({ message: 'Ticket non trouvé.' });
-        }
+        if (!ticketAfterUpdate) return res.status(404).json({ message: 'Ticket non trouvé.' });
 
         const populatedTicket = await Ticket.findById(ticketAfterUpdate._id)
             .populate('user', 'username')
@@ -169,11 +156,109 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
 
         req.io.emit('ticketUpdated', populatedTicket);
         await broadcastNotificationCounts(req);
+        res.status(200).json(populatedTicket);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
 
+// NOUVEAU : Route pour MODIFIER un message
+router.patch('/:ticketId/messages/:messageId/edit', isAuthenticated, async (req, res) => {
+    try {
+        const { ticketId, messageId } = req.params;
+        const { text } = req.body;
+        const userId = req.auth._id;
+
+        const ticket = await Ticket.findById(ticketId);
+        const message = ticket.messages.id(messageId);
+
+        if (!message) return res.status(404).json({ message: 'Message non trouvé.' });
+        if (message.sender.toString() !== userId) return res.status(403).json({ message: 'Action non autorisée.' });
+
+        message.text = text;
+        message.isEdited = true;
+        await ticket.save();
+
+        const populatedTicket = await Ticket.findById(ticketId)
+            .populate('user', 'username')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username');
+
+        req.io.emit('ticketUpdated', populatedTicket);
+        res.status(200).json(populatedTicket);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// NOUVEAU : Route pour SUPPRIMER un message
+router.delete('/:ticketId/messages/:messageId', isAuthenticated, async (req, res) => {
+    try {
+        const { ticketId, messageId } = req.params;
+        const userId = req.auth._id;
+
+        const ticket = await Ticket.findById(ticketId);
+        const message = ticket.messages.id(messageId);
+
+        if (!message) return res.status(404).json({ message: 'Message non trouvé.' });
+        if (message.sender.toString() !== userId) return res.status(403).json({ message: 'Action non autorisée.' });
+
+        message.isDeleted = true;
+        message.text = ''; 
+        message.attachments = []; 
+        await ticket.save();
+
+        const populatedTicket = await Ticket.findById(ticketId)
+            .populate('user', 'username')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username');
+
+        req.io.emit('ticketUpdated', populatedTicket);
+        res.status(200).json(populatedTicket);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// NOUVEAU : Route pour ajouter/retirer une réaction emoji
+router.patch('/:ticketId/messages/:messageId/react', isAuthenticated, async (req, res) => {
+    try {
+        const { ticketId, messageId } = req.params;
+        const { emoji } = req.body;
+        const userId = req.auth._id;
+
+        const ticket = await Ticket.findById(ticketId);
+        const message = ticket.messages.id(messageId);
+
+        if (!message || message.isDeleted) return res.status(404).json({ message: 'Message non trouvé.' });
+
+        const reactionIndex = message.reactions.findIndex(r => r.emoji === emoji);
+
+        if (reactionIndex > -1) {
+            const userIndex = message.reactions[reactionIndex].users.indexOf(userId);
+            if (userIndex > -1) {
+                message.reactions[reactionIndex].users.splice(userIndex, 1);
+                if (message.reactions[reactionIndex].users.length === 0) {
+                    message.reactions.splice(reactionIndex, 1);
+                }
+            } else {
+                message.reactions[reactionIndex].users.push(userId);
+            }
+        } else {
+            message.reactions.push({ emoji, users: [userId] });
+        }
+
+        await ticket.save();
+
+        const populatedTicket = await Ticket.findById(ticketId)
+            .populate('user', 'username')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username');
+
+        req.io.emit('ticketUpdated', populatedTicket);
         res.status(200).json(populatedTicket);
 
     } catch (error) {
-        console.error("Erreur lors de l'ajout d'un message:", error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
