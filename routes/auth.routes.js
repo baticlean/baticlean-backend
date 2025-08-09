@@ -1,23 +1,23 @@
-// Fichier : backend/routes/auth.routes.js
-
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // Outil Node.js pour générer des tokens sécurisés
+const crypto = require('crypto');
 const User = require('../models/User.model');
 const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/notifications.js');
 const rateLimit = require('express-rate-limit');
-const SibApiV3Sdk = require('sib-api-v3-sdk'); // SDK de Brevo
+const SibApiV3Sdk = require('sib-api-v3-sdk');
 
-// ✅ CONFIGURATION DE BREVO (TRANSACTIONAL EMAILS)
+// NOUVEAU : Importations pour la validation
+const { body, validationResult } = require('express-validator');
+const { isValidPhoneNumber } = require('libphonenumber-js');
+
+
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
 let apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY; // Assurez-vous que BREVO_API_KEY est dans vos secrets
+apiKey.apiKey = process.env.BREVO_API_KEY;
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
-
-// Sécurité anti-force-brute
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -32,40 +32,55 @@ const authLimiter = rateLimit({
     },
 });
 
-// La route /register reste inchangée
-router.post('/register', authLimiter, async (req, res) => {
-    try {
-        const { username, email, password, phoneNumber } = req.body;
-        if (!username || !email || !password || !phoneNumber) {
-            return res.status(400).json({ message: 'Tous les champs sont requis.' });
+// ROUTE /register MISE À JOUR AVEC LA VALIDATION
+router.post('/register', 
+    authLimiter, 
+    // NOUVEAU : Règles de validation
+    [
+        body('username', 'Le nom d\'utilisateur est requis').not().isEmpty().trim().escape(),
+        body('email', 'Veuillez fournir un email valide').isEmail().normalizeEmail(),
+        body('phoneNumber', 'Le numéro de téléphone est invalide').custom((value) => {
+            if (!isValidPhoneNumber(value)) {
+                throw new Error('Le format du numéro de téléphone est incorrect.');
+            }
+            return true;
+        }),
+        body('password', 'Le mot de passe ne respecte pas les critères de sécurité.')
+            .isLength({ min: 9 })
+            .matches(/^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/)
+    ],
+    async (req, res) => {
+        // NOUVEAU : Vérification des erreurs de validation
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            // On renvoie la première erreur trouvée pour un message plus clair
+            return res.status(400).json({ message: errors.array()[0].msg });
         }
 
-        const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
-        if (!passwordRegex.test(password)) {
-            return res.status(400).json({ 
-                message: 'Le mot de passe ne respecte pas les critères de sécurité. Il doit contenir au moins 9 caractères, dont 3 chiffres, 1 caractère spécial et des lettres.' 
-            });
+        try {
+            const { username, email, password, phoneNumber } = req.body;
+
+            const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
+            if (userExists) {
+                return res.status(400).json({ message: 'Email ou numéro de téléphone déjà utilisé.' });
+            }
+
+            const salt = await bcrypt.genSalt(12);
+            const passwordHash = await bcrypt.hash(password, salt);
+
+            const newUser = await User.create({ username, email, passwordHash, phoneNumber });
+
+            await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
+            await broadcastNotificationCounts(req);
+
+            res.status(201).json({ message: `Utilisateur créé avec succès !` });
+        } catch (error) {
+            console.error("Erreur lors de l'inscription:", error);
+            res.status(500).json({ message: 'Erreur interne du serveur.' });
         }
-
-        const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
-        if (userExists) {
-            return res.status(400).json({ message: 'Email ou numéro de téléphone déjà utilisé.' });
-        }
-
-        const salt = await bcrypt.genSalt(12);
-        const passwordHash = await bcrypt.hash(password, salt);
-
-        const newUser = await User.create({ username, email, passwordHash, phoneNumber });
-
-        await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
-        await broadcastNotificationCounts(req);
-
-        res.status(201).json({ message: `Utilisateur créé avec succès !` });
-    } catch (error) {
-        console.error("Erreur lors de l'inscription:", error);
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
-});
+);
+
 
 // La route /login reste inchangée
 router.post('/login', authLimiter, async (req, res) => {
@@ -101,64 +116,18 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ ROUTE MODIFIÉE TEMPORAIREMENT : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE
+
+// Les routes de mot de passe oublié restent inchangées
 router.post('/forgot-password', authLimiter, async (req, res) => {
-    // On renvoie un statut 503 (Service Unavailable) pour indiquer que la fonction est en maintenance.
     return res.status(503).json({
         message: "Cette fonctionnalité est actuellement en cours de maintenance. Notre service d'envoi d'emails est en révision. Veuillez réessayer plus tard. Nous nous excusons pour le désagrément."
     });
-
-    /*
-    // --- DÉBUT DU CODE ORIGINAL MIS EN COMMENTAIRE ---
-    // Une fois votre compte Brevo réactivé, supprimez le code ci-dessus
-    // et décommentez le bloc ci-dessous.
-    try {
-        const { email } = req.body;
-        const user = await User.findOne({ email });
-
-        if (!user) {
-            // Pour la sécurité, on ne confirme jamais si un email existe ou non.
-            return res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
-        }
-
-        // 1. Créer un token de réinitialisation
-        const resetToken = crypto.randomBytes(20).toString('hex');
-
-        // On ne stocke que la version hashée du token en base de données (plus sûr)
-        user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.passwordResetExpires = Date.now() + 3600000; // Valide 1 heure
-        await user.save({ validateBeforeSave: false });
-
-        // 2. Envoyer l'email
-        const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-        const sendSmtpEmail = {
-            to: [{ email: user.email, name: user.username }],
-            sender: {
-                name: 'BATIClean Support',
-                email: 'baticlean225@gmail.com', // Doit être un expéditeur validé sur Brevo
-            },
-            subject: 'Réinitialisation de votre mot de passe BATIClean',
-            htmlContent: `<html><body>...</body></html>`,
-        };
-
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
-        res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
-    }
-    // --- FIN DU CODE ORIGINAL MIS EN COMMENTAIRE ---
-    */
 });
 
-
-// ✅ NOUVELLE ROUTE : RÉINITIALISATION EFFECTIVE DU MOT DE PASSE
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
-        // On cherche l'utilisateur avec le bon token, qui n'a pas expiré
         const user = await User.findOne({ 
             passwordResetToken: hashedToken,
             passwordResetExpires: { $gt: Date.now() }
@@ -168,7 +137,6 @@ router.post('/reset-password/:token', async (req, res) => {
             return res.status(400).json({ message: 'Le lien est invalide ou a expiré.' });
         }
 
-        // On vérifie que le nouveau mot de passe est valide
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
@@ -177,7 +145,6 @@ router.post('/reset-password/:token', async (req, res) => {
             });
         }
 
-        // Mise à jour du mot de passe
         const salt = await bcrypt.genSalt(12);
         user.passwordHash = await bcrypt.hash(password, salt);
         user.passwordResetToken = undefined;
