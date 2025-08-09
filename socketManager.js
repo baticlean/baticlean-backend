@@ -1,7 +1,7 @@
 // baticlean-backend/socketManager.js
 
 const { Server } = require("socket.io");
-const Ticket = require('./models/Ticket.model.js'); // ✅ On importe le modèle de Ticket
+const Ticket = require('./models/Ticket.model.js');
 
 let io;
 let onlineUsers = {};
@@ -21,27 +21,31 @@ const initializeSocket = (server, corsOptions) => {
             }
         });
 
-        // ✅ NOUVEAU : Logique pour marquer les messages comme lus
+        // ✅ CORRIGÉ : Logique de mise à jour des messages lus
         socket.on('markMessagesAsRead', async ({ ticketId, readerId }) => {
             try {
-                // On met à jour tous les messages du ticket qui n'ont pas été envoyés par le lecteur
-                // et où le lecteur n'est pas déjà dans le tableau "readBy"
-                const result = await Ticket.updateMany(
-                    { 
-                        _id: ticketId, 
-                        'messages.sender': { $ne: readerId },
-                        'messages.readBy': { $ne: readerId }
-                    },
-                    { $addToSet: { 'messages.$.readBy': readerId } }
-                );
+                const ticket = await Ticket.findById(ticketId);
+                if (!ticket) return;
 
-                if (result.modifiedCount > 0) {
+                let hasBeenModified = false;
+                // On parcourt chaque message pour le mettre à jour
+                ticket.messages.forEach(message => {
+                    // On ne met à jour que les messages non envoyés par le lecteur
+                    // et que le lecteur n'a pas encore lus
+                    if (message.sender?.toString() !== readerId && !message.readBy.includes(readerId)) {
+                        message.readBy.push(readerId);
+                        hasBeenModified = true;
+                    }
+                });
+
+                // Si au moins un message a été modifié, on sauvegarde et on notifie les clients
+                if (hasBeenModified) {
+                    await ticket.save();
                     const updatedTicket = await Ticket.findById(ticketId)
                         .populate('user', 'username')
                         .populate('messages.sender', 'username profilePicture')
                         .populate('assignedAdmin', 'username');
 
-                    // On notifie tout le monde que le ticket a été mis à jour
                     io.emit('ticketUpdated', updatedTicket);
                 }
             } catch (error) {
