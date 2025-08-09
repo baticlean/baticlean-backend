@@ -31,7 +31,6 @@ const authLimiter = rateLimit({
     },
 });
 
-// Route d'inscription (inchangée)
 router.post('/register', 
     authLimiter, 
     [
@@ -70,7 +69,6 @@ router.post('/register',
     }
 );
 
-// Route de connexion (inchangée)
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -98,41 +96,23 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-
-// ===================================================================
-// ## GESTION DE LA MAINTENANCE POUR "MOT DE PASSE OUBLIÉ" ##
-// ===================================================================
 router.post('/forgot-password', authLimiter, async (req, res) => {
-
-    // --- MODE MAINTENANCE (Actuellement ACTIVÉ) ---
-    // Le code s'arrête ici et renvoie le message de maintenance.
     return res.status(503).json({
         message: "Cette fonctionnalité est actuellement en cours de maintenance. Veuillez réessayer plus tard."
     });
 
-
     /*
-    // --- MODE OPÉRATIONNEL (Actuellement DÉSACTIVÉ) ---
-    //
-    // Pour ACTIVER la fonctionnalité (désactiver la maintenance) :
-    // 1. Mettez le bloc de code ci-dessus (return res.status...) en commentaire en ajoutant `/*` avant et `*/` après.
-    // 2. Supprimez les marques de commentaire `/*` et `*/` qui entourent ce bloc.
-    //
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
-
         if (!user) {
             return res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
         }
-
         const resetToken = crypto.randomBytes(20).toString('hex');
         user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-        user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+        user.passwordResetExpires = Date.now() + 15 * 60 * 1000;
         await user.save({ validateBeforeSave: false });
-
         const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
         const sendSmtpEmail = {
             to: [{ email: user.email, name: user.username }],
             sender: {
@@ -150,10 +130,8 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
                     <p style="margin-top: 20px; font-size: 12px; color: #777;">Si vous n'avez pas fait cette demande, vous pouvez ignorer cet email en toute sécurité.</p>
                 </div>`,
         };
-
         await apiInstance.sendTransacEmail(sendSmtpEmail);
         res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
-
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
@@ -161,22 +139,17 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     */
 });
 
-
-// Route de réinitialisation (inchangée)
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-
         const user = await User.findOne({ passwordResetToken: hashedToken });
 
         if (!user) {
             return res.status(400).json({ message: 'Ce lien est invalide ou a déjà été utilisé.' });
         }
-
         if (Date.now() > user.passwordResetExpires) {
             return res.status(400).json({ message: "Le lien n'est plus valide car le délai d'utilisation est passé. Veuillez en demander un autre." });
         }
-
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
         if (!passwordRegex.test(password)) {
@@ -184,19 +157,15 @@ router.post('/reset-password/:token', async (req, res) => {
                 message: 'Le nouveau mot de passe ne respecte pas les critères de sécurité.' 
             });
         }
-
         const salt = await bcrypt.genSalt(12);
         user.passwordHash = await bcrypt.hash(password, salt);
         user.passwordResetToken = undefined;
         user.passwordResetExpires = undefined;
         await user.save();
-
         res.status(200).json({ message: 'Votre mot de passe a été réinitialisé avec succès.' });
-
     } catch (error) {
         res.status(500).json({ message: 'Erreur lors de la réinitialisation du mot de passe.' });
     }
 });
-
 
 module.exports = router;
