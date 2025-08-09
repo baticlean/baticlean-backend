@@ -2,13 +2,11 @@
 
 const { Schema, model } = require('mongoose');
 
-// NOUVEAU : Schéma pour les pièces jointes
 const attachmentSchema = new Schema({
-  url: { type: String, required: true }, // L'URL du fichier sur Cloudinary
-  fileName: { type: String, required: true }, // Le nom original du fichier
-  fileType: { type: String, required: true }, // Le type MIME (ex: 'image/png')
+  url: { type: String, required: true },
+  fileName: { type: String, required: true },
+  fileType: { type: String, required: true },
 }, { _id: false });
-
 
 const messageSchema = new Schema({
   sender: { 
@@ -23,10 +21,14 @@ const messageSchema = new Schema({
   },
   text: {
     type: String,
-    // Le texte n'est plus requis, on peut envoyer juste des fichiers
   },
-  // NOUVEAU : On ajoute le champ pour les pièces jointes
-  attachments: [attachmentSchema]
+  attachments: [attachmentSchema],
+  // ✅ NOUVEAU : On ajoute un champ pour savoir qui a lu le message
+  // Ce sera un tableau contenant l'ID de l'utilisateur qui a lu.
+  readBy: [{
+      type: Schema.Types.ObjectId,
+      ref: 'User'
+  }]
 }, { timestamps: true });
 
 const ticketSchema = new Schema(
