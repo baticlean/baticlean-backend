@@ -1,4 +1,5 @@
-// Fichier : backend/models/Booking.model.js (Version Finale Complète)
+// baticlean-backend/models/Booking.model.js
+
 const { Schema, model } = require('mongoose');
 
 const timelineEventSchema = new Schema({
@@ -46,11 +47,15 @@ const bookingSchema = new Schema(
         type: Boolean,
         default: false
     },
-    // ✅ CHAMP AJOUTÉ : Pour le masquage côté admin
     hiddenForAdmins: [{
         type: Schema.Types.ObjectId,
         ref: 'User'
-    }]
+    }],
+    // On ajoute le champ pour suivre si un avis a été laissé
+    hasBeenReviewed: {
+        type: Boolean,
+        default: false
+    }
   },
   {
     timestamps: true

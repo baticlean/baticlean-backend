@@ -1,13 +1,13 @@
-// Fichier : backend/routes/booking.routes.js (Version Finale Complète)
+// baticlean-backend/routes/booking.routes.js
+
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
+const Service = require('../models/Service.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
-// === ROUTES POUR LES CLIENTS (Logique existante conservée) ===
-
-// Obtenir ses propres réservations (actives ou masquées)
+// === ROUTES POUR LES CLIENTS ===
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -21,8 +21,6 @@ router.get('/my-bookings', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Pour que l'utilisateur annule sa réservation
 router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -36,7 +34,7 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         }
         booking.status = 'Annulée';
         booking.timeline.push({ status: 'Annulée' });
-        booking.readByAdmins = []; // Notifie les admins
+        booking.readByAdmins = [];
         await booking.save();
         const populatedBooking = await Booking.findById(booking._id).populate('service', 'title').populate('user', 'username');
         req.io.emit('bookingUpdated', populatedBooking);
@@ -46,8 +44,6 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Masquer ou afficher une réservation pour le client
 router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -64,8 +60,6 @@ router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Compter les notifications non lues
 router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -75,8 +69,6 @@ router.get('/my-unread-count', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Marquer comme lues
 router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -87,14 +79,11 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     }
 });
 
-
-// === ROUTES POUR LES ADMINS (Logique mise à jour) ===
-
-// Créer une réservation (pourrait être restreint aux admins si nécessaire)
+// === ROUTES POUR LES ADMINS ===
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
-        const userId = req.auth._id; // Ou un ID d'utilisateur fourni dans le corps si un admin crée pour un client
+        const userId = req.auth._id;
         if (!serviceId || !bookingDate || !bookingTime || !address || !phoneNumber) {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
@@ -107,8 +96,6 @@ router.post('/', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Récupère les réservations actives ou masquées pour l'admin
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showHidden = req.query.hidden === 'true';
@@ -124,37 +111,29 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Empêche l'action si la réservation est déjà annulée
 router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const { status } = req.body;
         const adminId = req.auth._id;
-
         const bookingToUpdate = await Booking.findById(bookingId);
         if (!bookingToUpdate) {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
-
         if (bookingToUpdate.status === 'Annulée') {
             return res.status(400).json({ message: 'Cette réservation a été annulée par le client et ne peut plus être modifiée.' });
         }
-
         if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
             return res.status(400).json({ message: 'Statut invalide.' });
         }
-
         const updateQuery = { 
             status, 
             $push: { timeline: { status } },
             $addToSet: { readByAdmins: adminId },
             isReadByUser: false
         };
-
         const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true })
             .populate('user', 'username').populate('service', 'title');
-
         const userId = updatedBooking.user._id.toString();
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
@@ -170,8 +149,6 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Remplace la suppression par un masquage
 router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -181,14 +158,59 @@ router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Pour restaurer une réservation masquée
 router.patch('/:bookingId/unhide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
         await Booking.findByIdAndUpdate(bookingId, { $pull: { hiddenForAdmins: req.auth._id } });
         res.status(200).json({ message: 'Réservation restaurée avec succès.' });
     } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// === NOUVELLE ROUTE POUR LES AVIS ===
+router.post('/:bookingId/review', isAuthenticated, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { rating, comment } = req.body;
+        const user = req.auth;
+
+        if (!rating || !comment) {
+            return res.status(400).json({ message: 'Une note et un commentaire sont requis.' });
+        }
+
+        const booking = await Booking.findOne({ _id: bookingId, user: user._id });
+
+        if (!booking) return res.status(404).json({ message: 'Réservation non trouvée.' });
+        if (booking.status !== 'Terminée') return res.status(403).json({ message: 'Vous ne pouvez laisser un avis que sur une prestation terminée.' });
+        if (booking.hasBeenReviewed) return res.status(403).json({ message: 'Vous avez déjà laissé un avis pour cette prestation.' });
+
+        const newReview = {
+            user: user._id,
+            username: user.username,
+            profilePicture: user.profilePicture,
+            rating,
+            comment,
+            booking: bookingId
+        };
+
+        await Service.findByIdAndUpdate(booking.service, {
+            $push: { reviews: { $each: [newReview], $position: 0 } }
+        });
+        
+        booking.hasBeenReviewed = true;
+        await booking.save();
+        
+        const updatedService = await Service.findById(booking.service)
+            .populate('comments.user', 'username profilePicture')
+            .populate('reviews.user', 'username profilePicture');
+            
+        req.io.emit('serviceUpdated', updatedService);
+
+        res.status(201).json({ message: 'Merci pour votre avis !' });
+
+    } catch (error) {
+        console.error("Erreur lors de l'ajout de l'avis:", error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
