@@ -1,4 +1,4 @@
-// Fichier : backend/routes/booking.routes.js
+// Fichier : backend/routes/booking.routes.js (Version Complète et Corrigée)
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
@@ -7,16 +7,15 @@ const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
 // === ROUTES POUR LES CLIENTS ===
 
-// ✅ MODIFIÉ : Obtenir ses propres réservations (actives ou masquées)
+// Obtenir ses propres réservations (actives ou masquées)
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
-        // On vérifie si le client veut voir ses réservations masquées
         const showHidden = req.query.hidden === 'true';
 
         const userBookings = await Booking.find({ 
             user: userId,
-            hiddenForUser: showHidden // On filtre selon le statut de masquage
+            hiddenForUser: showHidden
         }).populate('service', 'title images price').sort({ bookingDate: -1 });
 
         res.status(200).json(userBookings);
@@ -25,14 +24,44 @@ router.get('/my-bookings', isAuthenticated, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : Masquer ou afficher une réservation pour le client
+// Pour que l'utilisateur annule sa réservation
+router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const userId = req.auth._id;
+
+        const booking = await Booking.findOne({ _id: bookingId, user: userId });
+
+        if (!booking) {
+            return res.status(404).json({ message: 'Réservation non trouvée ou action non autorisée.' });
+        }
+        if (booking.status !== 'En attente') {
+            return res.status(400).json({ message: 'Cette réservation ne peut plus être annulée.' });
+        }
+
+        booking.status = 'Annulée';
+        booking.timeline.push({ status: 'Annulée' });
+        booking.readByAdmins = []; // Notifie les admins
+        await booking.save();
+
+        const populatedBooking = await Booking.findById(booking._id).populate('service', 'title').populate('user', 'username');
+
+        req.io.emit('bookingUpdated', populatedBooking);
+        await broadcastNotificationCounts(req);
+
+        res.status(200).json(populatedBooking);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+// Masquer ou afficher une réservation pour le client
 router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const userId = req.auth._id;
-        const { hide } = req.body; // Un booléen : true pour masquer, false pour afficher
+        const { hide } = req.body;
 
-        // On vérifie que la réservation appartient bien à l'utilisateur
         const booking = await Booking.findOne({ _id: bookingId, user: userId });
         if (!booking) {
             return res.status(404).json({ message: 'Réservation non trouvée ou non autorisée.' });
@@ -42,14 +71,12 @@ router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
         await booking.save();
 
         res.status(200).json(booking);
-
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-
-// Route pour compter les notifications non lues (inchangée)
+// Compter les notifications non lues
 router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -60,7 +87,7 @@ router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     }
 });
 
-// Route pour marquer comme lues (inchangée)
+// Marquer comme lues
 router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -72,7 +99,7 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
 });
 
 
-// === ROUTES POUR LES ADMINS (INCHANGÉES) ===
+// === ROUTES POUR LES ADMINS ===
 
 router.post('/', isAuthenticated, async (req, res) => {
     try {
