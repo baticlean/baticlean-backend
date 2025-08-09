@@ -54,6 +54,10 @@ app.use('/api/notifications', require('./routes/notification.routes.js'));
 // ✅ AJOUTEZ CETTE LIGNE
 app.use('/api/config', require('./routes/config.routes.js'));
 
+// NOUVEAU : On ajoute les routes de maintenance
+const { router: maintenanceRouter } = require('./routes/maintenance.routes.js');
+app.use('/api/maintenance', maintenanceRouter);
+
 server.listen(PORT, () => {
     console.log(`🚀 Serveur démarré sur le port ${PORT}`);
 });
