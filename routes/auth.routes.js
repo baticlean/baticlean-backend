@@ -1,3 +1,5 @@
+// Fichier : backend/routes/auth.routes.js
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -8,16 +10,19 @@ const { broadcastToAdmins, broadcastNotificationCounts } = require('../utils/not
 const rateLimit = require('express-rate-limit');
 const SibApiV3Sdk = require('sib-api-v3-sdk');
 
-// NOUVEAU : Importations pour la validation
+// NOUVEAU : Importations pour la validation avancée
 const { body, validationResult } = require('express-validator');
 const { isValidPhoneNumber } = require('libphonenumber-js');
 
 
+// Configuration de Brevo (inchangée)
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
 let apiKey = defaultClient.authentications['api-key'];
 apiKey.apiKey = process.env.BREVO_API_KEY;
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
+
+// Sécurité anti-force-brute (inchangée)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -32,11 +37,10 @@ const authLimiter = rateLimit({
     },
 });
 
-// ROUTE /register MISE À JOUR AVEC LA VALIDATION
+// ✅ MODIFIÉ : Route /register avec validation renforcée
 router.post('/register', 
     authLimiter, 
-    // NOUVEAU : Règles de validation
-    [
+    [ // Nouvelles règles de validation
         body('username', 'Le nom d\'utilisateur est requis').not().isEmpty().trim().escape(),
         body('email', 'Veuillez fournir un email valide').isEmail().normalizeEmail(),
         body('phoneNumber', 'Le numéro de téléphone est invalide').custom((value) => {
@@ -46,14 +50,12 @@ router.post('/register',
             return true;
         }),
         body('password', 'Le mot de passe ne respecte pas les critères de sécurité.')
-            .isLength({ min: 9 })
             .matches(/^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/)
     ],
     async (req, res) => {
-        // NOUVEAU : Vérification des erreurs de validation
+        // Vérification des erreurs de validation
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            // On renvoie la première erreur trouvée pour un message plus clair
             return res.status(400).json({ message: errors.array()[0].msg });
         }
 
@@ -81,8 +83,7 @@ router.post('/register',
     }
 );
 
-
-// La route /login reste inchangée
+// Route /login (inchangée)
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -116,14 +117,45 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-
-// Les routes de mot de passe oublié restent inchangées
+// ✅ MODIFIÉ : Route de mot de passe oublié avec maintenance désactivée
 router.post('/forgot-password', authLimiter, async (req, res) => {
-    return res.status(503).json({
-        message: "Cette fonctionnalité est actuellement en cours de maintenance. Notre service d'envoi d'emails est en révision. Veuillez réessayer plus tard. Nous nous excusons pour le désagrément."
-    });
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            // Pour la sécurité, on ne confirme jamais si un email existe ou non.
+            return res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
+        }
+
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+        user.passwordResetExpires = Date.now() + 3600000; // Valide 1 heure
+        await user.save({ validateBeforeSave: false });
+
+        const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+        const sendSmtpEmail = {
+            to: [{ email: user.email, name: user.username }],
+            sender: {
+                name: 'BATIClean Support',
+                email: 'baticlean225@gmail.com',
+            },
+            subject: 'Réinitialisation de votre mot de passe BATIClean',
+            // IMPORTANT : Personnalisez votre email ici
+            htmlContent: `<html><body><p>Bonjour ${user.username},</p><p>Vous avez demandé une réinitialisation de mot de passe. Veuillez cliquer sur ce <a href="${resetURL}">lien</a> pour continuer.</p><p>Ce lien expirera dans une heure.</p></body></html>`,
+        };
+
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
+        res.status(200).json({ message: 'Si un compte est associé à cet email, un lien de réinitialisation a été envoyé.' });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
+    }
 });
 
+
+// Route de réinitialisation effective du mot de passe (inchangée)
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
