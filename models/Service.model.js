@@ -7,15 +7,13 @@ const commentSchema = new Schema(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     username: { type: String, required: true },
     text: { type: String, required: true },
-    likes: {
-      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-      default: []
-    },
+    likes: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
+    // ✅ NOUVEAU : On ajoute une référence au commentaire parent
+    parentId: { type: Schema.Types.ObjectId, default: null }
   },
   { timestamps: true }
 );
 
-// Schéma pour chaque avis/notation laissé après une prestation
 const reviewSchema = new Schema(
     {
         user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -39,19 +37,9 @@ const serviceSchema = new Schema(
       required: true,
       enum: ['Ménage', 'Entretien', 'Maintenance', 'Autre'],
     },
-    likes: {
-      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-      default: []
-    },
-    comments: {
-      type: [commentSchema],
-      default: []
-    },
-    // On ajoute le tableau pour stocker les avis
-    reviews: {
-      type: [reviewSchema],
-      default: []
-    }
+    likes: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
+    comments: { type: [commentSchema], default: [] },
+    reviews: { type: [reviewSchema], default: [] }
   },
   { timestamps: true }
 );
