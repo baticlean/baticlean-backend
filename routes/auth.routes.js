@@ -111,14 +111,14 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
     });
 
 
-    
+    /*
     // --- MODE OPÉRATIONNEL (Actuellement DÉSACTIVÉ) ---
     //
     // Pour ACTIVER la fonctionnalité (désactiver la maintenance) :
     // 1. Mettez le bloc de code ci-dessus (return res.status...) en commentaire en ajoutant `/*` avant et `*/` après.
     // 2. Supprimez les marques de commentaire `/*` et `*/` qui entourent ce bloc.
     //
-   try {
+    try {
         const { email } = req.body;
         const user = await User.findOne({ email });
 
@@ -158,6 +158,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
         console.error(error);
         res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
     }
+    */
 });
 
 
