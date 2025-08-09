@@ -1,4 +1,4 @@
-// Fichier : backend/models/Booking.model.js (Version avec notifications client)
+// Fichier : backend/models/Booking.model.js
 const { Schema, model } = require('mongoose');
 
 const timelineEventSchema = new Schema({
@@ -38,11 +38,14 @@ const bookingSchema = new Schema(
     },
     timeline: [timelineEventSchema],
     readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    // ✅ NOUVEAU CHAMP : Pour les notifications du client
-    // On met 'true' par défaut pour ne pas notifier les anciennes réservations.
     isReadByUser: {
         type: Boolean,
         default: true
+    },
+    // ✅ NOUVEAU CHAMP : Pour masquer la réservation côté client
+    hiddenForUser: {
+        type: Boolean,
+        default: false
     }
   },
   {

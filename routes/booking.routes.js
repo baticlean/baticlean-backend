@@ -1,4 +1,4 @@
-// Fichier : backend/routes/booking.routes.js (Version finale avec notifications client)
+// Fichier : backend/routes/booking.routes.js
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
@@ -7,18 +7,49 @@ const { broadcastNotificationCounts } = require('../utils/notifications.js');
 
 // === ROUTES POUR LES CLIENTS ===
 
-// Obtenir ses propres réservations (inchangé)
+// ✅ MODIFIÉ : Obtenir ses propres réservations (actives ou masquées)
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
-        const userBookings = await Booking.find({ user: userId }).populate('service', 'title images price').sort({ bookingDate: -1 });
+        // On vérifie si le client veut voir ses réservations masquées
+        const showHidden = req.query.hidden === 'true';
+
+        const userBookings = await Booking.find({ 
+            user: userId,
+            hiddenForUser: showHidden // On filtre selon le statut de masquage
+        }).populate('service', 'title images price').sort({ bookingDate: -1 });
+
         res.status(200).json(userBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// ✅ NOUVELLE ROUTE : Compter les notifications de réservation non lues pour le client
+// ✅ NOUVELLE ROUTE : Masquer ou afficher une réservation pour le client
+router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const userId = req.auth._id;
+        const { hide } = req.body; // Un booléen : true pour masquer, false pour afficher
+
+        // On vérifie que la réservation appartient bien à l'utilisateur
+        const booking = await Booking.findOne({ _id: bookingId, user: userId });
+        if (!booking) {
+            return res.status(404).json({ message: 'Réservation non trouvée ou non autorisée.' });
+        }
+
+        booking.hiddenForUser = hide;
+        await booking.save();
+
+        res.status(200).json(booking);
+
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+
+// Route pour compter les notifications non lues (inchangée)
 router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -29,7 +60,7 @@ router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : Marquer toutes ses notifications de réservation comme lues
+// Route pour marquer comme lues (inchangée)
 router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -41,9 +72,8 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
 });
 
 
-// === ROUTES POUR LES ADMINS ===
+// === ROUTES POUR LES ADMINS (INCHANGÉES) ===
 
-// Créer une réservation (inchangé)
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
@@ -61,7 +91,6 @@ router.post('/', isAuthenticated, async (req, res) => {
     }
 });
 
-// Obtenir toutes les réservations (inchangé)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const allBookings = await Booking.find().populate('user', 'username email').populate('service', 'title').sort({ bookingDate: -1 });
@@ -71,7 +100,6 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-// Mettre à jour le statut d'une réservation par un admin
 router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -82,12 +110,11 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
             return res.status(400).json({ message: 'Statut invalide.' });
         }
 
-        // On marque la notif admin comme lue ET la notif client comme non lue
         const updateQuery = { 
             status, 
             $push: { timeline: { status } },
             $addToSet: { readByAdmins: adminId },
-            isReadByUser: false // ✅ Le client doit être notifié !
+            isReadByUser: false
         };
 
         const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true })
@@ -98,7 +125,6 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
 
-        // --- LOGIQUE D'ENVOI DE NOTIFICATION AU CLIENT ---
         const userId = updatedBooking.user._id.toString();
         const userSocketId = req.onlineUsers[userId];
 
@@ -108,18 +134,15 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
                 booking: updatedBooking
             };
             req.io.to(userSocketId).emit('bookingStatusChanged', notificationPayload);
-            console.log(`✅ Notification envoyée au client ${userId} sur le socket ${userSocketId}`);
         }
-        // --- FIN DE LA LOGIQUE D'ENVOI ---
 
-        await broadcastNotificationCounts(req); // Met à jour les compteurs admin
+        await broadcastNotificationCounts(req);
         res.status(200).json(updatedBooking);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
 
-// Supprimer une réservation (inchangé)
 router.delete('/:bookingId', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
