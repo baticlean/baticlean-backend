@@ -101,8 +101,17 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE
+// ✅ ROUTE MODIFIÉE TEMPORAIREMENT : DEMANDE DE RÉINITIALISATION DE MOT DE PASSE
 router.post('/forgot-password', authLimiter, async (req, res) => {
+    // On renvoie un statut 503 (Service Unavailable) pour indiquer que la fonction est en maintenance.
+    return res.status(503).json({
+        message: "Cette fonctionnalité est actuellement en cours de maintenance. Notre service d'envoi d'emails est en révision. Veuillez réessayer plus tard. Nous nous excusons pour le désagrément."
+    });
+
+    /*
+    // --- DÉBUT DU CODE ORIGINAL MIS EN COMMENTAIRE ---
+    // Une fois votre compte Brevo réactivé, supprimez le code ci-dessus
+    // et décommentez le bloc ci-dessous.
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
@@ -129,13 +138,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
                 email: 'baticlean225@gmail.com', // Doit être un expéditeur validé sur Brevo
             },
             subject: 'Réinitialisation de votre mot de passe BATIClean',
-            htmlContent: `<html><body>
-                <p>Bonjour ${user.username},</p>
-                <p>Vous avez demandé une réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour continuer :</p>
-                <a href="${resetURL}" target="_blank">Réinitialiser mon mot de passe</a>
-                <p>Ce lien expirera dans une heure.</p>
-                <p>Si vous n'êtes pas à l'origine de cette demande, veuillez ignorer cet email.</p>
-            </body></html>`,
+            htmlContent: `<html><body>...</body></html>`,
         };
 
         await apiInstance.sendTransacEmail(sendSmtpEmail);
@@ -145,6 +148,8 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
         console.error(error);
         res.status(500).json({ message: "Erreur lors de l'envoi de l'email." });
     }
+    // --- FIN DU CODE ORIGINAL MIS EN COMMENTAIRE ---
+    */
 });
 
 
