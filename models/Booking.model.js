@@ -1,4 +1,4 @@
-// Fichier : backend/models/Booking.model.js
+// Fichier : backend/models/Booking.model.js (Version Finale Complète)
 const { Schema, model } = require('mongoose');
 
 const timelineEventSchema = new Schema({
@@ -42,11 +42,15 @@ const bookingSchema = new Schema(
         type: Boolean,
         default: true
     },
-    // ✅ NOUVEAU CHAMP : Pour masquer la réservation côté client
     hiddenForUser: {
         type: Boolean,
         default: false
-    }
+    },
+    // ✅ CHAMP AJOUTÉ : Pour le masquage côté admin
+    hiddenForAdmins: [{
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    }]
   },
   {
     timestamps: true
