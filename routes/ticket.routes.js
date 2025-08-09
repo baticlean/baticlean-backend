@@ -1,11 +1,14 @@
-// baticlean/baticlean-backend/baticlean-backend-42f3c9fe26e8b96f5f88e3569849f459bcc2c933/routes/ticket.routes.js
-// Fichier : backend/routes/ticket.routes.js (Version avec archivage)
+// baticlean/baticlean-backend/routes/ticket.routes.js
 
 const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
+
+// NOUVEAU : On importe notre configuration d'upload de fichiers
+const uploader = require('../config/cloudinary.config.js');
+
 
 // Route pour créer un nouveau ticket (inchangée)
 router.post('/', isAuthenticated, async (req, res) => {
@@ -79,7 +82,7 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 
-// ✅ MODIFIÉ : Route pour obtenir les tickets d'un utilisateur (gère les archives)
+// Route pour obtenir les tickets d'un utilisateur (inchangée)
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
@@ -93,7 +96,7 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
     }
 });
 
-// ✅ MODIFIÉ : Route pour obtenir tous les tickets (admins, gère les archives)
+// Route pour obtenir tous les tickets (admins, inchangée)
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
@@ -112,17 +115,34 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
 });
 
 
-// Route pour ajouter un message à un ticket existant (inchangée)
-router.post('/:ticketId/messages', isAuthenticated, async (req, res) => {
+// ✅ MODIFIÉ : Route pour ajouter un message, gère maintenant les fichiers
+router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), async (req, res) => {
     try {
         const { ticketId } = req.params;
         const { text } = req.body;
         const senderId = req.auth._id;
         const isSenderAdmin = (req.auth.role === 'admin' || req.auth.role === 'superAdmin');
 
-        const newMessage = { sender: senderId, text, senderType: isSenderAdmin ? 'admin' : 'user' };
-        let updateQuery;
+        // On vérifie qu'il y a au moins du texte ou un fichier
+        if (!text && (!req.files || req.files.length === 0)) {
+            return res.status(400).json({ message: 'Un message ne peut être vide (texte ou fichier requis).' });
+        }
 
+        // On formate les fichiers reçus pour les ajouter au message
+        const attachments = req.files ? req.files.map(file => ({
+            url: file.path,
+            fileName: file.originalname,
+            fileType: file.mimetype
+        })) : [];
+
+        const newMessage = { 
+            sender: senderId, 
+            text: text || '', // Le texte est maintenant optionnel
+            senderType: isSenderAdmin ? 'admin' : 'user',
+            attachments // On ajoute les pièces jointes
+        };
+
+        let updateQuery;
         if (isSenderAdmin) {
             updateQuery = {
                 $push: { messages: newMessage },
@@ -184,11 +204,11 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     }
 });
 
-// ✅ NOUVELLE ROUTE : Archiver ou désarchiver un ticket
+// Route pour archiver ou désarchiver un ticket (inchangée)
 router.patch('/:ticketId/archive', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
-        const { archive } = req.body; // Un booléen : true pour archiver, false pour désarchiver
+        const { archive } = req.body;
         const user = req.auth;
 
         const ticket = await Ticket.findById(ticketId);
@@ -197,7 +217,6 @@ router.patch('/:ticketId/archive', isAuthenticated, async (req, res) => {
         let updateData = {};
         const isAdminRequest = user.role === 'admin' || user.role === 'superAdmin';
 
-        // Sécurité : On s'assure que seul le bon utilisateur ou un admin peut archiver
         if (isAdminRequest) {
             updateData.archivedByAdmin = archive;
         } else if (ticket.user.toString() === user._id) {
@@ -208,7 +227,6 @@ router.patch('/:ticketId/archive', isAuthenticated, async (req, res) => {
 
         const updatedTicket = await Ticket.findByIdAndUpdate(ticketId, updateData, { new: true });
 
-        // Événement socket pour informer les clients de la mise à jour
         req.io.emit('ticketArchived', { _id: updatedTicket._id, ...updateData });
 
         res.status(200).json(updatedTicket);

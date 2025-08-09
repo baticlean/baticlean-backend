@@ -1,6 +1,14 @@
-// baticlean/baticlean-backend/baticlean-backend-42f3c9fe26e8b96f5f88e3569849f459bcc2c933/models/Ticket.model.js
-// Fichier : backend/models/Ticket.model.js (Version avec archivage)
+// baticlean-backend/models/Ticket.model.js
+
 const { Schema, model } = require('mongoose');
+
+// NOUVEAU : Schéma pour les pièces jointes
+const attachmentSchema = new Schema({
+  url: { type: String, required: true }, // L'URL du fichier sur Cloudinary
+  fileName: { type: String, required: true }, // Le nom original du fichier
+  fileType: { type: String, required: true }, // Le type MIME (ex: 'image/png')
+}, { _id: false });
+
 
 const messageSchema = new Schema({
   sender: { 
@@ -15,8 +23,10 @@ const messageSchema = new Schema({
   },
   text: {
     type: String,
-    required: true,
-  }
+    // Le texte n'est plus requis, on peut envoyer juste des fichiers
+  },
+  // NOUVEAU : On ajoute le champ pour les pièces jointes
+  attachments: [attachmentSchema]
 }, { timestamps: true });
 
 const ticketSchema = new Schema(
@@ -44,7 +54,6 @@ const ticketSchema = new Schema(
     isReadByUser: { type: Boolean, default: true },
     readByAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     hiddenForAdmins: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    // ✅ AJOUT : Champs pour l'archivage
     archivedByUser: { type: Boolean, default: false },
     archivedByAdmin: { type: Boolean, default: false }
   },
