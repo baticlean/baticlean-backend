@@ -1,4 +1,4 @@
-// baticlean-backend/routes/ticket.routes.js
+// baticlean-backend/routes/ticket.routes.js (Corrigé)
 
 const express = require('express');
 const router = express.Router();
@@ -7,7 +7,7 @@ const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
 const uploader = require('../config/cloudinary.config.js');
 
-// Fonction helper pour peupler un ticket avec toutes les informations nécessaires
+// Fonction helper pour peupler un ticket
 const populateTicket = (ticketId) => {
     return Ticket.findById(ticketId)
         .populate('user', 'username email')
@@ -15,6 +15,7 @@ const populateTicket = (ticketId) => {
         .populate('assignedAdmin', 'username');
 };
 
+// ... (vos routes POST pour créer un ticket et des messages restent inchangées)
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { messages } = req.body;
@@ -65,24 +66,71 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
     }
 });
 
-// ... (le reste de vos routes reste inchangé, mais est inclus ci-dessous pour un copier-coller complet)
 
+// ✅ C'EST ICI LA MODIFICATION
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const adminId = req.auth._id;
-        let findQuery = { _id: ticketId };
-        if (req.auth.role === 'admin') findQuery.assignedAdmin = null;
+        const adminRole = req.auth.role;
 
-        const ticket = await Ticket.findOneAndUpdate(findQuery, { assignedAdmin: adminId, status: 'Pris en charge', $addToSet: { readByAdmins: adminId } }, { new: true });
-        if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé ou déjà pris.' });
+        // On cherche le ticket et on peuple l'admin assigné pour avoir son nom
+        const ticket = await Ticket.findById(ticketId).populate('assignedAdmin', 'username');
+
+        if (!ticket) {
+            return res.status(404).json({ message: 'Ticket non trouvé.' });
+        }
+
+        // On vérifie si un admin est déjà assigné
+        if (ticket.assignedAdmin) {
+            // Si c'est le même admin, on ne fait rien
+            if (ticket.assignedAdmin._id.toString() === adminId) {
+                return res.status(200).json(await populateTicket(ticket._id));
+            }
+
+            // Si un autre admin est dessus...
+            if (adminRole === 'superAdmin') {
+                // Le Super Admin peut prendre la main
+                const previousAdminName = ticket.assignedAdmin.username;
+                ticket.assignedAdmin = adminId;
+                // On s'assure que le statut est correct
+                ticket.status = 'Pris en charge';
+                await ticket.save();
+
+                const populatedTicket = await populateTicket(ticket._id);
+                req.io.emit('ticketUpdated', populatedTicket);
+                await broadcastNotificationCounts(req);
+                // On renvoie un message spécial pour le frontend
+                return res.status(200).json({ 
+                    ticket: populatedTicket, 
+                    overrideMessage: `Ticket déjà pris par ${previousAdminName}, mais vous avez pris la main.` 
+                });
+
+            } else {
+                // Un admin normal est bloqué
+                return res.status(403).json({ 
+                    message: `Ce ticket est déjà pris en charge par ${ticket.assignedAdmin.username}.` 
+                });
+            }
+        }
+
+        // Si le ticket n'est pas assigné, on le prend
+        ticket.assignedAdmin = adminId;
+        ticket.status = 'Pris en charge';
+        ticket.readByAdmins.addToSet(adminId);
+        await ticket.save();
 
         const populatedTicket = await populateTicket(ticket._id);
         req.io.emit('ticketUpdated', populatedTicket);
         await broadcastNotificationCounts(req);
         res.status(200).json(populatedTicket);
-    } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
+
+    } catch (error) { 
+        res.status(500).json({ message: 'Erreur interne du serveur.' }); 
+    }
 });
+
+// ... (le reste de vos routes reste inchangé) ...
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
