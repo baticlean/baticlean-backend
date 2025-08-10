@@ -1,4 +1,4 @@
-// backend/routes/booking.routes.js (Mis à jour)
+// backend/routes/booking.routes.js (Corrigé)
 
 const express = require('express');
 const router = express.Router();
@@ -7,6 +7,9 @@ const Service = require('../models/Service.model');
 const User = require('../models/User.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
+
+// ✅ ÉTAPE 1 : Importer les fonctions d'envoi de mail
+// Assurez-vous d'avoir le fichier utils/email.js que nous avons créé
 const { 
     sendBookingConfirmationEmail, 
     sendStatusUpdateEmail, 
@@ -14,35 +17,9 @@ const {
     sendReviewRequestEmail 
 } = require('../utils/email.js');
 
-// ... (vos routes existantes POST, PATCH /cancel, etc. restent ici)
+// --- ROUTES CLIENTS ---
 
-// ✅ NOUVELLE ROUTE : Marquer une seule réservation comme lue par l'utilisateur
-router.patch('/:bookingId/mark-as-read-by-user', isAuthenticated, async (req, res) => {
-    try {
-        const { bookingId } = req.params;
-        const userId = req.auth._id;
-
-        // On s'assure que la réservation appartient bien à l'utilisateur
-        const booking = await Booking.findOneAndUpdate(
-            { _id: bookingId, user: userId },
-            { isReadByUser: true },
-            { new: true }
-        );
-
-        if (!booking) {
-            return res.status(404).json({ message: 'Réservation non trouvée ou non autorisée.' });
-        }
-        res.status(200).json(booking);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
-    }
-});
-
-
-// ... (le reste de vos routes dans ce fichier reste inchangé)
-// J'inclus le reste du fichier pour que vous puissiez tout copier-coller
-
-// === ROUTES CLIENTS ===
+// Créer une réservation
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
@@ -52,10 +29,21 @@ router.post('/', isAuthenticated, async (req, res) => {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
 
-        const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, bookingTime, address, phoneNumber, notes, readByAdmins: [], timeline: [{ status: 'En attente' }] });
+        const newBooking = await Booking.create({ 
+            service: serviceId, 
+            user: userId, 
+            bookingDate, 
+            bookingTime, 
+            address, 
+            phoneNumber, 
+            notes, 
+            readByAdmins: [],
+            timeline: [{ status: 'En attente' }] // Initialise la timeline
+        });
         
         const populatedBooking = await Booking.findById(newBooking._id).populate('user').populate('service');
 
+        // ✅ APPEL : Envoi de l'email de confirmation au client
         await sendBookingConfirmationEmail(populatedBooking.user, populatedBooking, populatedBooking.service);
 
         req.io.emit('newBooking', populatedBooking);
@@ -65,13 +53,15 @@ router.post('/', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
+// Annuler sa propre réservation
 router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
         const userId = req.auth._id;
         const booking = await Booking.findOne({ _id: bookingId, user: userId });
         if (!booking) {
-            return res.status(404).json({ message: 'Réservation non trouvée ou action non autorisée.' });
+            return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         if (booking.status !== 'En attente') {
             return res.status(400).json({ message: 'Cette réservation ne peut plus être annulée.' });
@@ -83,6 +73,7 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         
         const populatedBooking = await Booking.findById(booking._id).populate('user').populate('service');
 
+        // ✅ APPEL : Envoi de l'email d'annulation au client
         await sendCancellationEmail(populatedBooking.user, populatedBooking, populatedBooking.service);
 
         req.io.emit('bookingUpdated', populatedBooking);
@@ -92,6 +83,60 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
+
+// --- ROUTES ADMINS ---
+
+// Mettre à jour le statut d'une réservation
+router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        const { status } = req.body;
+        const adminId = req.auth._id;
+
+        const bookingToUpdate = await Booking.findById(bookingId);
+        if (!bookingToUpdate) {
+            return res.status(404).json({ message: 'Réservation non trouvée.' });
+        }
+        
+        const updateQuery = { 
+            status, 
+            $push: { timeline: { status, eventDate: new Date() } },
+            $addToSet: { readByAdmins: adminId },
+            isReadByUser: false
+        };
+        
+        const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true })
+            .populate('user').populate('service');
+
+        // ✅ ÉTAPE 2 : Logique d'envoi d'email en fonction du nouveau statut
+        if (status === 'Terminée') {
+            await sendReviewRequestEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
+        } else {
+            await sendStatusUpdateEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
+        }
+
+        // Le reste de la logique (sockets, etc.)
+        const userId = updatedBooking.user._id.toString();
+        const userSocketId = req.onlineUsers[userId];
+        if (userSocketId) {
+            const notificationPayload = {
+                message: `Votre réservation #${updatedBooking._id.toString().slice(-6)} a été ${status.toLowerCase()}.`,
+                booking: updatedBooking
+            };
+            req.io.to(userSocketId).emit('bookingStatusChanged', notificationPayload);
+        }
+        
+        await broadcastNotificationCounts(req);
+        res.status(200).json(updatedBooking);
+    } catch (error) {
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+
+// ... (Le reste de vos routes reste identique) ...
+
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -111,9 +156,7 @@ router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
         const userId = req.auth._id;
         const { hide } = req.body;
         const booking = await Booking.findOne({ _id: bookingId, user: userId });
-        if (!booking) {
-            return res.status(404).json({ message: 'Réservation non trouvée ou non autorisée.' });
-        }
+        if (!booking) return res.status(404).json({ message: 'Réservation non trouvée.' });
         booking.hiddenForUser = hide;
         await booking.save();
         res.status(200).json(booking);
@@ -139,52 +182,6 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// === ROUTES POUR LES ADMINS ===
-router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-        const { bookingId } = req.params;
-        const { status } = req.body;
-        const adminId = req.auth._id;
-        const bookingToUpdate = await Booking.findById(bookingId);
-        if (!bookingToUpdate) {
-            return res.status(404).json({ message: 'Réservation non trouvée.' });
-        }
-        if (bookingToUpdate.status === 'Annulée' && status !== 'Annulée') {
-            return res.status(400).json({ message: 'Cette réservation a été annulée par le client.' });
-        }
-        if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
-            return res.status(400).json({ message: 'Statut invalide.' });
-        }
-        const updateQuery = { 
-            status, 
-            $push: { timeline: { status, eventDate: new Date() } },
-            $addToSet: { readByAdmins: adminId },
-            isReadByUser: false
-        };
-        const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true })
-            .populate('user').populate('service');
-        if (status === 'Terminée') {
-            await sendReviewRequestEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
-        } else {
-            await sendStatusUpdateEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
-        }
-        const userId = updatedBooking.user._id.toString();
-        const userSocketId = req.onlineUsers[userId];
-        if (userSocketId) {
-            const notificationPayload = {
-                message: `Votre réservation #${updatedBooking._id.toString().slice(-6)} a été ${status.toLowerCase()}.`,
-                booking: updatedBooking
-            };
-            req.io.to(userSocketId).emit('bookingStatusChanged', notificationPayload);
-        }
-        await broadcastNotificationCounts(req);
-        res.status(200).json(updatedBooking);
-    } catch (error) {
-        res.status(500).json({ message: 'Erreur interne du serveur.' });
-    }
-});
-
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showHidden = req.query.hidden === 'true';
