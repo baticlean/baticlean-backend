@@ -1,38 +1,37 @@
-// backend/routes/booking.routes.js (Mis à jour)
+// backend/routes/booking.routes.js (Corrigé et Complet)
 
 const express = require('express');
 const router = express.Router();
 const Booking = require('../models/Booking.model');
 const Service = require('../models/Service.model');
-const User = require('../models/User.model'); // AJOUTÉ : On a besoin du modèle User
+const User = require('../models/User.model'); // Assurez-vous que User est importé
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
-// AJOUTÉ : On importe nos nouvelles fonctions d'email
+
+// ✅ ÉTAPE 1 : Importer les fonctions d'envoi de mail
 const { 
     sendBookingConfirmationEmail, 
     sendStatusUpdateEmail, 
     sendCancellationEmail, 
     sendReviewRequestEmail 
-} = require('../utils/email.js');
+} = require('../utils/email.js'); // Assurez-vous que le chemin est correct
 
-// --- ROUTES CLIENTS ---
+// === ROUTES POUR LES CLIENTS ===
 
 // Créer une réservation
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { serviceId, bookingDate, bookingTime, address, phoneNumber, notes } = req.body;
         const userId = req.auth._id;
-
         if (!serviceId || !bookingDate || !bookingTime || !address || !phoneNumber) {
             return res.status(400).json({ message: 'Tous les champs sont requis.' });
         }
-
         const newBooking = await Booking.create({ service: serviceId, user: userId, bookingDate, bookingTime, address, phoneNumber, notes, readByAdmins: [] });
         
-        // On récupère les informations complètes pour l'email et les sockets
+        // On récupère les informations complètes pour les notifications
         const populatedBooking = await Booking.findById(newBooking._id).populate('user').populate('service');
 
-        // AJOUTÉ : Envoi de l'email de confirmation au client
+        // ✅ APPEL : Envoi de l'email de confirmation au client
         await sendBookingConfirmationEmail(populatedBooking.user, populatedBooking, populatedBooking.service);
 
         req.io.emit('newBooking', populatedBooking);
@@ -49,22 +48,20 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
         const { bookingId } = req.params;
         const userId = req.auth._id;
         const booking = await Booking.findOne({ _id: bookingId, user: userId });
-
         if (!booking) {
             return res.status(404).json({ message: 'Réservation non trouvée ou action non autorisée.' });
         }
         if (booking.status !== 'En attente') {
             return res.status(400).json({ message: 'Cette réservation ne peut plus être annulée.' });
         }
-
         booking.status = 'Annulée';
-        booking.timeline.push({ status: 'Annulée' });
+        booking.timeline.push({ status: 'Annulée', eventDate: new Date() });
         booking.readByAdmins = [];
         await booking.save();
         
         const populatedBooking = await Booking.findById(booking._id).populate('user').populate('service');
 
-        // AJOUTÉ : Envoi de l'email d'annulation
+        // ✅ APPEL : Envoi de l'email d'annulation au client
         await sendCancellationEmail(populatedBooking.user, populatedBooking, populatedBooking.service);
 
         req.io.emit('bookingUpdated', populatedBooking);
@@ -76,7 +73,7 @@ router.patch('/:bookingId/cancel', isAuthenticated, async (req, res) => {
 });
 
 
-// --- ROUTES ADMINS ---
+// === ROUTES POUR LES ADMINS ===
 
 // Mettre à jour le statut d'une réservation
 router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) => {
@@ -84,21 +81,20 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         const { bookingId } = req.params;
         const { status } = req.body;
         const adminId = req.auth._id;
-
         const bookingToUpdate = await Booking.findById(bookingId);
         if (!bookingToUpdate) {
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         if (bookingToUpdate.status === 'Annulée' && status !== 'Annulée') {
-            return res.status(400).json({ message: 'Cette réservation a été annulée par le client et ne peut plus être modifiée.' });
+            return res.status(400).json({ message: 'Cette réservation a été annulée par le client.' });
         }
-        if (!['En attente', 'Confirmée', 'Terminée', 'Annulée'].includes(status)) {
+        if (!['Confirmée', 'Terminée', 'Annulée'].includes(status)) {
             return res.status(400).json({ message: 'Statut invalide.' });
         }
 
         const updateQuery = { 
             status, 
-            $push: { timeline: { status } },
+            $push: { timeline: { status, eventDate: new Date() } },
             $addToSet: { readByAdmins: adminId },
             isReadByUser: false
         };
@@ -106,13 +102,15 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         const updatedBooking = await Booking.findByIdAndUpdate(bookingId, updateQuery, { new: true })
             .populate('user').populate('service');
 
-        // AJOUTÉ : Logique d'envoi d'email en fonction du nouveau statut
+        // ✅ APPEL : Logique d'envoi d'email en fonction du nouveau statut
         if (status === 'Terminée') {
             await sendReviewRequestEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
         } else {
+            // Envoie un mail pour "Confirmée" ou si l'admin annule lui-même
             await sendStatusUpdateEmail(updatedBooking.user, updatedBooking, updatedBooking.service);
         }
 
+        // Le reste de la logique (sockets, etc.) est inchangé
         const userId = updatedBooking.user._id.toString();
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
@@ -130,10 +128,7 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
     }
 });
 
-
-// ... (Le reste de vos routes de booking.routes.js reste inchangé)
-// J'inclus le reste du fichier pour que vous puissiez tout copier-coller
-
+// ... (Le reste du fichier est inchangé) ...
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -147,7 +142,6 @@ router.get('/my-bookings', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -164,7 +158,6 @@ router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -174,7 +167,6 @@ router.get('/my-unread-count', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -184,7 +176,6 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showHidden = req.query.hidden === 'true';
@@ -200,7 +191,6 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -210,7 +200,6 @@ router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.patch('/:bookingId/unhide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -220,7 +209,6 @@ router.patch('/:bookingId/unhide', isAuthenticated, isAdmin, async (req, res) =>
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.post('/:bookingId/review', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
