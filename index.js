@@ -26,7 +26,7 @@ const server = http.createServer(app);
 
 const corsOptions = {
 
-    origin: ['http://localhost:5173', process.env.FRONTEND_URL], // Mettez ici l'URL de votre site en production
+    origin: ['http://localhost:5173', process.env.FRONTE], // Mettez ici l'URL de votre site en production
 
     methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 
