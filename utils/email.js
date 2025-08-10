@@ -21,7 +21,7 @@ const sendBookingConfirmationEmail = async (user, booking, service) => {
                 <h2 style="color: #8A2387;">Réservation Reçue !</h2>
                 <p>Bonjour ${user.username},</p>
                 <p>Nous avons bien reçu votre demande de réservation pour le service <strong>"${service.title}"</strong>.</p>
-                <p>Un administrateur va l'examiner sous peu et vous recevrez un nouvel email lorsque son statut changera.</p>
+                <p>Un administrateur va l'examiner sous peu et vous recevrez un nouvel email lorsque son statut changera.(Pensez à vérifier la section "spams" de votre boîte mail  (Pensez à vérifier la section "spams" de votre boîte mail car le prochain changement de statut pourrait être marqué comme spam pour des raisons de sécurité. Vous pouvez nous marquer comme "non-spam" pour une meilleur flexibilité.).</p>
                 <p style="margin-top: 20px; font-size: 12px; color: #777;">Merci de votre confiance.</p>
             </div>
         `,
@@ -40,7 +40,7 @@ const sendStatusUpdateEmail = async (user, booking, service) => {
                 <h2 style="color: #8A2387;">Mise à Jour de votre Réservation</h2>
                 <p>Bonjour ${user.username},</p>
                 <p>Le statut de votre réservation pour le service <strong>"${service.title}"</strong> est maintenant : <strong>${booking.status}</strong>.</p>
-                <p style="margin-top: 20px; font-size: 12px; color: #777;">Vous pouvez suivre son évolution depuis votre espace client. (Pensez à vérifier vos spams pour la confirmation).</p>
+                <p style="margin-top: 20px; font-size: 12px; color: #777;">Vous pouvez suivre son évolution depuis votre espace client. (Pensez à vérifier la section "spams" de votre boîte mail car le prochain changement de statut pourrait être marqué comme spam pour des raisons de sécurité. Vous pouvez nous marquer comme "non-spam" pour une meilleur flexibilité. ).</p>
             </div>
         `,
     };
