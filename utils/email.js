@@ -40,7 +40,7 @@ const sendStatusUpdateEmail = async (user, booking, service) => {
                 <h2 style="color: #8A2387;">Mise à Jour de votre Réservation</h2>
                 <p>Bonjour ${user.username},</p>
                 <p>Le statut de votre réservation pour le service <strong>"${service.title}"</strong> est maintenant : <strong>${booking.status}</strong>.</p>
-                <p style="margin-top: 20px; font-size: 12px; color: #777;">Vous pouvez suivre son évolution depuis votre espace client.</p>
+                <p style="margin-top: 20px; font-size: 12px; color: #777;">Vous pouvez suivre son évolution depuis votre espace client. (Pensez à vérifier vos spams pour la confirmation).</p>
             </div>
         `,
     };
