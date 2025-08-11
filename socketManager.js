@@ -1,9 +1,8 @@
-// baticlean-backend/socketManager.js
-
 const { Server } = require("socket.io");
 const Ticket = require('./models/Ticket.model.js');
 
 let io;
+// Votre système utilise un objet, nous allons le conserver
 let onlineUsers = {};
 
 const initializeSocket = (server, corsOptions) => {
@@ -28,17 +27,13 @@ const initializeSocket = (server, corsOptions) => {
                 if (!ticket) return;
 
                 let hasBeenModified = false;
-                // On parcourt chaque message pour le mettre à jour
                 ticket.messages.forEach(message => {
-                    // On ne met à jour que les messages non envoyés par le lecteur
-                    // et que le lecteur n'a pas encore lus
                     if (message.sender?.toString() !== readerId && !message.readBy.includes(readerId)) {
                         message.readBy.push(readerId);
                         hasBeenModified = true;
                     }
                 });
 
-                // Si au moins un message a été modifié, on sauvegarde et on notifie les clients
                 if (hasBeenModified) {
                     await ticket.save();
                     const updatedTicket = await Ticket.findById(ticketId)
@@ -53,11 +48,28 @@ const initializeSocket = (server, corsOptions) => {
             }
         });
 
+        // ✅✅✅ DÉBUT DU BLOC AJOUTÉ POUR LES AVERTISSEMENTS ✅✅✅
+        // Émis par un admin pour avertir un utilisateur
+        socket.on('admin:warn_user', ({ userId, message }) => {
+            // 1. On cherche le socket de l'utilisateur cible dans votre objet onlineUsers
+            const userSocketId = onlineUsers[userId];
+            
+            if (userSocketId) {
+                // 2. Si on le trouve, on envoie l'événement *uniquement* à cet utilisateur
+                io.to(userSocketId).emit('user:receive_warning', { message });
+                console.log(`🔔 Avertissement envoyé à l'utilisateur ${userId} sur le socket ${userSocketId}`);
+            } else {
+                console.log(`⚠️ Utilisateur ${userId} non trouvé ou non connecté. Avertissement non envoyé.`);
+            }
+        });
+        // ✅✅✅ FIN DU BLOC AJOUTÉ POUR LES AVERTISSEMENTS ✅✅✅
+
         socket.on("disconnect", () => {
+            // On parcourt l'objet pour trouver l'utilisateur à supprimer
             for (const userId in onlineUsers) {
                 if (onlineUsers[userId] === socket.id) {
                     delete onlineUsers[userId];
-                    console.log(`🔌 Un utilisateur s'est déconnecté: ${socket.id}`);
+                    console.log(`🔌 Un utilisateur s'est déconnecté: ${socket.id}. Utilisateur ${userId} retiré.`);
                     console.log('Utilisateurs en ligne:', onlineUsers);
                     break;
                 }
