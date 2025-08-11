@@ -96,7 +96,14 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         
-        // Mise à jour des champs
+        // ✅ SÉCURITÉ AJOUTÉE : On bloque la modification si la réservation est déjà dans un état final.
+        if (bookingToUpdate.status === 'Annulée' || bookingToUpdate.status === 'Terminée') {
+            return res.status(400).json({ 
+                message: `Impossible de modifier une réservation qui est déjà '${bookingToUpdate.status}'.` 
+            });
+        }
+        
+        // Le reste de la logique ne s'exécute que si la garde passe
         bookingToUpdate.status = status;
         bookingToUpdate.timeline.push({ status, eventDate: new Date() });
         bookingToUpdate.readByAdmins.addToSet(adminId);
@@ -140,22 +147,18 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
 
 // --- AUTRES ROUTES ---
 
-// ✅ CORRECTION APPLIQUÉE ICI 
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
         const showHidden = req.query.hidden === 'true';
 
-        // 1. On récupère toutes les réservations de l'utilisateur
         const allUserBookings = await Booking.find({ 
             user: userId,
             hiddenForUser: showHidden
         }).populate('service', 'title images price').sort({ bookingDate: -1 });
 
-        // 2. On filtre pour ne garder que celles avec un service valide
         const validUserBookings = allUserBookings.filter(booking => booking.service !== null);
 
-        // 3. On renvoie la liste propre
         res.status(200).json(validUserBookings);
     } catch (error) {
         console.error("Erreur dans /my-bookings:", error);
@@ -209,7 +212,6 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
             .populate('service', 'title')
             .sort({ bookingDate: -1 });
 
-        // On applique aussi la sécurité ici pour l'admin, c'est une bonne pratique
         const validBookings = allBookings.filter(b => b.user && b.service);
             
         res.status(200).json(validBookings);
@@ -251,7 +253,6 @@ router.post('/:bookingId/review', isAuthenticated, async (req, res) => {
         if (booking.status !== 'Terminée') return res.status(403).json({ message: 'Vous ne pouvez laisser un avis que sur une prestation terminée.' });
         if (booking.hasBeenReviewed) return res.status(403).json({ message: 'Vous avez déjà laissé un avis pour cette prestation.' });
         
-        // Sécurité : Vérifier que le service existe avant de poster l'avis
         const serviceExists = await Service.findById(booking.service);
         if (!serviceExists) {
             return res.status(404).json({ message: 'Le service associé à cette réservation n\'existe plus.' });
