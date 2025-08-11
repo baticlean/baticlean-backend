@@ -7,24 +7,20 @@ const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
 const uploader = require('../config/cloudinary.config.js');
 
-// Fonction helper pour peupler un ticket
+// ... (la fonction populateTicket et les routes POST restent identiques)
 const populateTicket = (ticketId) => {
     return Ticket.findById(ticketId)
         .populate('user', 'username email')
         .populate('messages.sender', 'username profilePicture')
         .populate('assignedAdmin', 'username');
 };
-
-// ... (vos routes POST pour créer un ticket et des messages restent inchangées)
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { messages } = req.body;
         const userId = req.auth._id;
         if (!messages || messages.length === 0) return res.status(400).json({ message: 'Impossible de créer un ticket vide.' });
-
         const formattedMessages = messages.map(msg => ({ sender: msg.sender === 'user' ? userId : null, senderType: msg.sender, text: msg.text }));
         const newTicket = await Ticket.create({ user: userId, messages: formattedMessages, readByAdmins: [] });
-
         const populatedTicket = await populateTicket(newTicket._id);
         req.io.emit('newTicket', populatedTicket);
         await broadcastNotificationCounts(req);
@@ -33,28 +29,22 @@ router.post('/', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
 router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), async (req, res) => {
     try {
         const { ticketId } = req.params;
         const { text } = req.body;
         const senderId = req.auth._id;
         const isSenderAdmin = ['admin', 'superAdmin'].includes(req.auth.role);
-
         if (!text && (!req.files || req.files.length === 0)) {
             return res.status(400).json({ message: 'Un message ne peut être vide.' });
         }
-
         const attachments = req.files ? req.files.map(file => ({ url: file.path, fileName: file.originalname, fileType: file.mimetype })) : [];
         const newMessage = { sender: senderId, text: text || '', senderType: isSenderAdmin ? 'admin' : 'user', attachments };
-
         const updateQuery = isSenderAdmin
             ? { $push: { messages: newMessage }, $set: { isReadByUser: false, status: 'En attente de réponse' }, $addToSet: { readByAdmins: senderId } }
             : { $push: { messages: newMessage }, $set: { readByAdmins: [], status: 'Ouvert' } };
-
         const ticket = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
-
         const populatedTicket = await populateTicket(ticket._id);
         req.io.emit('ticketUpdated', populatedTicket);
         if (!isSenderAdmin) {
@@ -67,94 +57,91 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
 });
 
 
-// ✅ C'EST ICI LA MODIFICATION
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const adminId = req.auth._id;
         const adminRole = req.auth.role;
-
-        // On cherche le ticket et on peuple l'admin assigné pour avoir son nom
         const ticket = await Ticket.findById(ticketId).populate('assignedAdmin', 'username');
-
         if (!ticket) {
             return res.status(404).json({ message: 'Ticket non trouvé.' });
         }
-
-        // On vérifie si un admin est déjà assigné
         if (ticket.assignedAdmin) {
-            // Si c'est le même admin, on ne fait rien
             if (ticket.assignedAdmin._id.toString() === adminId) {
                 return res.status(200).json(await populateTicket(ticket._id));
             }
-
-            // Si un autre admin est dessus...
             if (adminRole === 'superAdmin') {
-                // Le Super Admin peut prendre la main
                 const previousAdminName = ticket.assignedAdmin.username;
                 ticket.assignedAdmin = adminId;
-                // On s'assure que le statut est correct
                 ticket.status = 'Pris en charge';
                 await ticket.save();
-
                 const populatedTicket = await populateTicket(ticket._id);
                 req.io.emit('ticketUpdated', populatedTicket);
                 await broadcastNotificationCounts(req);
-                // On renvoie un message spécial pour le frontend
                 return res.status(200).json({ 
                     ticket: populatedTicket, 
                     overrideMessage: `Ticket déjà pris par ${previousAdminName}, mais vous avez pris la main.` 
                 });
-
             } else {
-                // Un admin normal est bloqué
                 return res.status(403).json({ 
                     message: `Ce ticket est déjà pris en charge par ${ticket.assignedAdmin.username}.` 
                 });
             }
         }
-
-        // Si le ticket n'est pas assigné, on le prend
         ticket.assignedAdmin = adminId;
         ticket.status = 'Pris en charge';
         ticket.readByAdmins.addToSet(adminId);
         await ticket.save();
-
         const populatedTicket = await populateTicket(ticket._id);
         req.io.emit('ticketUpdated', populatedTicket);
         await broadcastNotificationCounts(req);
         res.status(200).json(populatedTicket);
-
     } catch (error) { 
         res.status(500).json({ message: 'Erreur interne du serveur.' }); 
     }
 });
 
-// ... (le reste de vos routes reste inchangé) ...
+
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
         const tickets = await Ticket.find({ user: req.auth._id, archivedByUser: showArchived }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
-        res.status(200).json(tickets);
+        
+        // ✅ SÉCURITÉ : On nettoie les messages dont le sender a été supprimé
+        const validTickets = tickets.map(ticket => {
+            ticket.messages = ticket.messages.filter(message => message.sender);
+            return ticket;
+        });
+
+        res.status(200).json(validTickets);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
         const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id }, archivedByAdmin: showArchived })
-            .populate('user', 'username email').populate('messages.sender', 'username profilePicture').populate('assignedAdmin', 'username').sort({ updatedAt: -1 });
-        res.status(200).json(tickets);
+            .populate('user', 'username email')
+            .populate('messages.sender', 'username profilePicture')
+            .populate('assignedAdmin', 'username')
+            .sort({ updatedAt: -1 });
+
+        // ✅ SÉCURITÉ : On filtre les tickets dont l'utilisateur principal a été supprimé
+        const validTickets = tickets.filter(ticket => ticket.user);
+        
+        res.status(200).json(validTickets);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// ... (le reste des routes reste identique)
 router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
         const user = req.auth;
         const updateQuery = user.role.includes('admin') ? { $addToSet: { readByAdmins: user._id } } : { isReadByUser: true };
-
         const ticket = await Ticket.findByIdAndUpdate(ticketId, updateQuery, { new: true });
         if (!ticket) return res.status(404).json({ message: 'Ticket non trouvé.' });
-
         const populatedTicket = await populateTicket(ticket._id);
         req.io.emit('ticketUpdated', populatedTicket);
         if (user.role.includes('admin')) await broadcastNotificationCounts(req);

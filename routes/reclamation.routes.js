@@ -1,10 +1,12 @@
-// Fichier : backend/routes/reclamation.routes.js (Version avec archivage)
+// backend/routes/reclamation.routes.js (Corrigé)
+
 const express = require('express');
 const router = express.Router();
 const Reclamation = require('../models/Reclamation.model');
 const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
-// Route pour créer une réclamation (inchangée)
+
+// ... (la route POST reste identique)
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { message, screenshots } = req.body;
@@ -25,28 +27,29 @@ router.post('/', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-// ✅ MODIFIÉ : Route pour obtenir les réclamations (actives ou archivées)
+
+
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
-        // On vérifie si on doit afficher les archives via un paramètre de requête
         const showArchived = req.query.archived === 'true';
-
-        // La requête change en fonction de `showArchived`
-        // Si true: on cherche les réclamations où l'admin EST dans la liste `hiddenForAdmins`
-        // Si false: on cherche celles où l'admin N'EST PAS dans la liste
         const query = {
             hiddenForAdmins: { [showArchived ? '$in' : '$ne']: req.auth._id }
         };
+
         const reclamations = await Reclamation.find(query)
             .populate('user', 'username email status')
             .sort({ createdAt: -1 });
 
-        res.status(200).json(reclamations);
+        // ✅ SÉCURITÉ : On filtre les réclamations dont l'utilisateur a été supprimé.
+        const validReclamations = reclamations.filter(reclamation => reclamation.user);
+
+        res.status(200).json(validReclamations);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-// Route pour archiver (anciennement "masquer") une réclamation (inchangée)
+
+// ... (le reste des routes hide, unhide, handle reste identique)
 router.patch('/:reclamationId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { reclamationId } = req.params;
@@ -61,7 +64,6 @@ router.patch('/:reclamationId/hide', isAuthenticated, isAdmin, async (req, res) 
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-// ✅ NOUVEAU : Route pour restaurer une réclamation
 router.patch('/:reclamationId/unhide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { reclamationId } = req.params;
@@ -75,8 +77,6 @@ router.patch('/:reclamationId/unhide', isAuthenticated, isAdmin, async (req, res
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
-
-// Route pour marquer comme "En cours" (inchangée)
 router.patch('/:reclamationId/handle', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { reclamationId } = req.params;
@@ -95,4 +95,6 @@ router.patch('/:reclamationId/handle', isAuthenticated, isAdmin, async (req, res
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
+
 module.exports = router;
