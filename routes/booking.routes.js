@@ -1,4 +1,4 @@
-// backend/routes/booking.routes.js (Version Finale Corrigée)
+// backend/routes/booking.routes.js
 
 const express = require('express');
 const router = express.Router();
@@ -104,10 +104,8 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
 
         await bookingToUpdate.save();
         
-        // ✅ CORRECTION : On repopule la réservation APRÈS la sauvegarde pour être sûr d'avoir toutes les données.
         const populatedBooking = await Booking.findById(bookingId).populate('user').populate('service');
 
-        // Log de débogage pour vérifier les données avant l'envoi de l'email
         console.log(`[Email Log] Tentative d'envoi pour le statut : ${status}`);
         console.log(`[Email Log] Données utilisateur :`, populatedBooking.user ? populatedBooking.user.email : "Utilisateur non trouvé");
         console.log(`[Email Log] Données service :`, populatedBooking.service ? populatedBooking.service.title : "Service non trouvé");
@@ -116,7 +114,6 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
             throw new Error("Impossible de trouver les données de l'utilisateur ou du service pour l'envoi de l'email.");
         }
 
-        // Logique d'envoi d'email
         if (status === 'Terminée') {
             await sendReviewRequestEmail(populatedBooking.user, populatedBooking, populatedBooking.service);
         } else {
@@ -124,7 +121,6 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         }
         console.log(`[Email Log] Email pour le statut '${status}' envoyé avec succès à ${populatedBooking.user.email}`);
 
-        // Le reste de la logique (sockets, etc.)
         const userId = populatedBooking.user._id.toString();
         const userSocketId = req.onlineUsers[userId];
         if (userSocketId) {
@@ -137,29 +133,36 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
         await broadcastNotificationCounts(req);
         res.status(200).json(populatedBooking);
     } catch (error) {
-        // Log d'erreur détaillé sur le serveur
         console.error("ERREUR LORS DE LA MISE À JOUR DU STATUT :", error);
         res.status(500).json({ message: 'Erreur interne du serveur lors de la mise à jour du statut.' });
     }
 });
 
+// --- AUTRES ROUTES ---
 
-// ... (Le reste de votre fichier booking.routes.js est correct et reste inchangé) ...
-
-// === AUTRES ROUTES (INCHANGÉES) ===
+// ✅ CORRECTION APPLIQUÉE ICI 
 router.get('/my-bookings', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
         const showHidden = req.query.hidden === 'true';
-        const userBookings = await Booking.find({ 
+
+        // 1. On récupère toutes les réservations de l'utilisateur
+        const allUserBookings = await Booking.find({ 
             user: userId,
             hiddenForUser: showHidden
         }).populate('service', 'title images price').sort({ bookingDate: -1 });
-        res.status(200).json(userBookings);
+
+        // 2. On filtre pour ne garder que celles avec un service valide
+        const validUserBookings = allUserBookings.filter(booking => booking.service !== null);
+
+        // 3. On renvoie la liste propre
+        res.status(200).json(validUserBookings);
     } catch (error) {
+        console.error("Erreur dans /my-bookings:", error);
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -174,6 +177,7 @@ router.patch('/:bookingId/toggle-hide', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.get('/my-unread-count', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -183,6 +187,7 @@ router.get('/my-unread-count', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
     try {
         const userId = req.auth._id;
@@ -192,6 +197,7 @@ router.patch('/mark-all-as-read', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showHidden = req.query.hidden === 'true';
@@ -202,11 +208,16 @@ router.get('/', isAuthenticated, isAdmin, async (req, res) => {
             .populate('user', 'username email')
             .populate('service', 'title')
             .sort({ bookingDate: -1 });
-        res.status(200).json(allBookings);
+
+        // On applique aussi la sécurité ici pour l'admin, c'est une bonne pratique
+        const validBookings = allBookings.filter(b => b.user && b.service);
+            
+        res.status(200).json(validBookings);
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -216,6 +227,7 @@ router.patch('/:bookingId/hide', isAuthenticated, isAdmin, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.patch('/:bookingId/unhide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -225,6 +237,7 @@ router.patch('/:bookingId/unhide', isAuthenticated, isAdmin, async (req, res) =>
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
 router.post('/:bookingId/review', isAuthenticated, async (req, res) => {
     try {
         const { bookingId } = req.params;
@@ -237,6 +250,13 @@ router.post('/:bookingId/review', isAuthenticated, async (req, res) => {
         if (!booking) return res.status(404).json({ message: 'Réservation non trouvée.' });
         if (booking.status !== 'Terminée') return res.status(403).json({ message: 'Vous ne pouvez laisser un avis que sur une prestation terminée.' });
         if (booking.hasBeenReviewed) return res.status(403).json({ message: 'Vous avez déjà laissé un avis pour cette prestation.' });
+        
+        // Sécurité : Vérifier que le service existe avant de poster l'avis
+        const serviceExists = await Service.findById(booking.service);
+        if (!serviceExists) {
+            return res.status(404).json({ message: 'Le service associé à cette réservation n\'existe plus.' });
+        }
+
         const newReview = {
             user: user._id,
             username: user.username,
