@@ -1,5 +1,3 @@
-// baticlean-backend/routes/ticket.routes.js (Corrigé)
-
 const express = require('express');
 const router = express.Router();
 const Ticket = require('../models/Ticket.model');
@@ -7,13 +5,15 @@ const { isAuthenticated, isAdmin } = require('../middleware/isAdmin.js');
 const { broadcastNotificationCounts } = require('../utils/notifications.js');
 const uploader = require('../config/cloudinary.config.js');
 
-// ... (la fonction populateTicket et les routes POST restent identiques)
+// Helper function to populate all necessary fields for a ticket
 const populateTicket = (ticketId) => {
     return Ticket.findById(ticketId)
-        .populate('user', 'username email')
-        .populate('messages.sender', 'username profilePicture')
-        .populate('assignedAdmin', 'username');
+        .populate('user', 'username email profilePicture role') // <-- MODIFIÉ
+        .populate('messages.sender', 'username profilePicture role') // <-- MODIFIÉ
+        .populate('assignedAdmin', 'username profilePicture role'); // <-- MODIFIÉ
 };
+
+// Create a new ticket
 router.post('/', isAuthenticated, async (req, res) => {
     try {
         const { messages } = req.body;
@@ -29,6 +29,8 @@ router.post('/', isAuthenticated, async (req, res) => {
         res.status(500).json({ message: 'Erreur interne du serveur.' });
     }
 });
+
+// Add a message to a ticket
 router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -56,7 +58,7 @@ router.post('/:ticketId/messages', isAuthenticated, uploader.array('files', 5), 
     }
 });
 
-
+// Claim a ticket (for admins)
 router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -101,13 +103,15 @@ router.patch('/:ticketId/claim', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-
+// Get tickets for the logged-in user
 router.get('/my-tickets', isAuthenticated, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
-        const tickets = await Ticket.find({ user: req.auth._id, archivedByUser: showArchived }).populate('messages.sender', 'username profilePicture').sort({ updatedAt: -1 });
+        const tickets = await Ticket.find({ user: req.auth._id, archivedByUser: showArchived })
+            .populate('messages.sender', 'username profilePicture role') // <-- MODIFIÉ
+            .populate('assignedAdmin', 'username profilePicture role') // <-- MODIFIÉ (Ligne ajoutée)
+            .sort({ updatedAt: -1 });
         
-        // ✅ SÉCURITÉ : On nettoie les messages dont le sender a été supprimé
         const validTickets = tickets.map(ticket => {
             ticket.messages = ticket.messages.filter(message => message.sender);
             return ticket;
@@ -117,24 +121,23 @@ router.get('/my-tickets', isAuthenticated, async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
 
-
+// Get all tickets for admins
 router.get('/', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const showArchived = req.query.archived === 'true';
         const tickets = await Ticket.find({ hiddenForAdmins: { $ne: req.auth._id }, archivedByAdmin: showArchived })
-            .populate('user', 'username email')
-            .populate('messages.sender', 'username profilePicture')
-            .populate('assignedAdmin', 'username')
+            .populate('user', 'username email profilePicture role') // <-- MODIFIÉ
+            .populate('messages.sender', 'username profilePicture role') // <-- MODIFIÉ
+            .populate('assignedAdmin', 'username profilePicture role') // <-- MODIFIÉ
             .sort({ updatedAt: -1 });
 
-        // ✅ SÉCURITÉ : On filtre les tickets dont l'utilisateur principal a été supprimé
         const validTickets = tickets.filter(ticket => ticket.user);
         
         res.status(200).json(validTickets);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
 
-// ... (le reste des routes reste identique)
+// Mark a ticket as read
 router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -148,6 +151,8 @@ router.patch('/:ticketId/mark-as-read', isAuthenticated, async (req, res) => {
         res.status(200).json(populatedTicket);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// Archive or unarchive a ticket
 router.patch('/:ticketId/archive', isAuthenticated, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -168,6 +173,8 @@ router.patch('/:ticketId/archive', isAuthenticated, async (req, res) => {
         res.status(200).json(updatedTicket);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// Hide a ticket for an admin
 router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const { ticketId } = req.params;
@@ -175,6 +182,8 @@ router.patch('/:ticketId/hide', isAuthenticated, isAdmin, async (req, res) => {
         res.status(200).json({ message: 'Ticket masqué.' });
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// Edit a message
 router.patch('/:ticketId/messages/:messageId/edit', isAuthenticated, async (req, res) => {
     try {
         const { ticketId, messageId } = req.params;
@@ -192,6 +201,8 @@ router.patch('/:ticketId/messages/:messageId/edit', isAuthenticated, async (req,
         res.status(200).json(populatedTicket);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// Delete a message
 router.delete('/:ticketId/messages/:messageId', isAuthenticated, async (req, res) => {
     try {
         const { ticketId, messageId } = req.params;
@@ -209,6 +220,8 @@ router.delete('/:ticketId/messages/:messageId', isAuthenticated, async (req, res
         res.status(200).json(populatedTicket);
     } catch (error) { res.status(500).json({ message: 'Erreur interne.' }); }
 });
+
+// Add or remove a reaction to a message
 router.patch('/:ticketId/messages/:messageId/react', isAuthenticated, async (req, res) => {
     try {
         const { ticketId, messageId } = req.params;
