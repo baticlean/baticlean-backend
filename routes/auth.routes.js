@@ -12,6 +12,7 @@ const SibApiV3Sdk = require('sib-api-v3-sdk');
 const { body, validationResult } = require('express-validator');
 const { isValidPhoneNumber } = require('libphonenumber-js');
 const { checkMaintenance } = require('./maintenance.routes.js');
+const { isAuthenticated } = require('../middleware/isAdmin.js'); // ✅ On importe isAuthenticated
 
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
 let apiKey = defaultClient.authentications['api-key'];
@@ -24,7 +25,6 @@ const authLimiter = rateLimit({
     keyGenerator: (req, res) => req.ip + (req.body.login || req.body.email),
 });
 
-// ✅ --- DÉBUT DE LA MODIFICATION ---
 router.post('/register', authLimiter, [
     body('username', 'Le nom d\'utilisateur est requis').not().isEmpty().trim().escape(),
     body('email', 'Veuillez fournir un email valide').isEmail().normalizeEmail(),
@@ -43,16 +43,13 @@ router.post('/register', authLimiter, [
         const passwordHash = await bcrypt.hash(password, salt);
         const newUser = await User.create({ username, email, passwordHash, phoneNumber });
 
-        // On notifie les admins (comme avant)
         await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
         await broadcastNotificationCounts(req);
         
-        // On génère le token IMMÉDIATEMENT
-        const { _id, role, status, profilePicture } = newUser;
-        const payload = { _id, email: newUser.email, username: newUser.username, role, status, profilePicture, phoneNumber: newUser.phoneNumber };
+        const { _id, role, status, profilePicture, warnings } = newUser;
+        const payload = { _id, email: newUser.email, username: newUser.username, role, status, profilePicture, phoneNumber: newUser.phoneNumber, warnings };
         const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
         
-        // On renvoie le token, et on précise que c'est un nouvel utilisateur
         res.status(201).json({ 
             authToken: authToken,
             isNewUser: true 
@@ -62,7 +59,6 @@ router.post('/register', authLimiter, [
         res.status(500).json({ message: 'Erreur interne.' });
     }
 });
-// ✅ --- FIN DE LA MODIFICATION ---
 
 
 router.post('/login', authLimiter, async (req, res) => {
@@ -76,8 +72,8 @@ router.post('/login', authLimiter, async (req, res) => {
         const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
         if (!isPasswordCorrect) return res.status(401).json({ message: 'Identifiants incorrects.' });
         
-        const { _id, username, role, email, status, profilePicture, phoneNumber } = user;
-        const payload = { _id, email, username, role, status, profilePicture, phoneNumber };
+        const { _id, username, role, email, status, profilePicture, phoneNumber, warnings } = user;
+        const payload = { _id, email, username, role, status, profilePicture, phoneNumber, warnings };
         const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
         if (user.status !== 'active') return res.status(403).json({ message: 'Compte suspendu.', authToken });
@@ -88,7 +84,33 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ... (le reste de ton fichier /forgot-password et /reset-password reste identique)
+// ✅ NOUVELLE ROUTE POUR SUPPRIMER UN AVERTISSEMENT SPÉCIFIQUE
+router.patch('/warnings/:warningId/clear', isAuthenticated, async (req, res) => {
+    try {
+        const { warningId } = req.params;
+        const userId = req.auth._id;
+
+        // On utilise $pull pour retirer un élément d'un tableau
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $pull: { warnings: { _id: warningId } } },
+            { new: true }
+        ).select('-passwordHash');
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+        }
+        
+        // On renvoie l'utilisateur mis à jour pour que le frontend puisse actualiser l'état
+        res.status(200).json({ message: 'Avertissement supprimé.', user: updatedUser });
+
+    } catch (error) {
+        console.error("Erreur lors de la suppression de l'avertissement:", error);
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
+
 router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password'), async (req, res) => {
     try {
         const { email } = req.body;

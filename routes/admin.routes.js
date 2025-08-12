@@ -3,29 +3,27 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
-const Booking = require('../models/Booking.model'); // On importe les modèles nécessaires
+const Booking = require('../models/Booking.model');
 const Service = require('../models/Service.model');
 const Ticket = require('../models/Ticket.model');
 const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// ✅ NOUVEAU : Route pour les statistiques du tableau de bord
+// Route pour les statistiques du tableau de bord (INCHANGÉE)
 router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const sevenDaysAgo = new Date(new Date().setDate(new Date().getDate() - 7));
 
-        // Cartes de statistiques principales
         const totalUsers = await User.countDocuments({ role: { $ne: 'superAdmin' } });
         const pendingBookings = await Booking.countDocuments({ status: 'En attente' });
         const newUsersLast7Days = await User.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
         const newBookingsLast7Days = await Booking.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
 
-        // Derniers avis des clients
         const recentReviews = await Service.aggregate([
-            { $unwind: '$reviews' }, // Sépare chaque avis en un document distinct
-            { $sort: { 'reviews.createdAt': -1 } }, // Trie par date de l'avis
-            { $limit: 5 }, // Ne prend que les 5 plus récents
-            { $project: { // Formate les données pour le frontend
+            { $unwind: '$reviews' },
+            { $sort: { 'reviews.createdAt': -1 } },
+            { $limit: 5 },
+            { $project: {
                 _id: '$reviews._id',
                 serviceTitle: '$title',
                 username: '$reviews.username',
@@ -35,7 +33,6 @@ router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
             }}
         ]);
         
-        // Derniers tickets non assignés
         const recentTickets = await Ticket.find({ assignedAdmin: null })
             .sort({ createdAt: -1 })
             .limit(5)
@@ -58,10 +55,7 @@ router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-
-// --- VOS AUTRES ROUTES (INCHANGÉES) ---
-
-// Route pour obtenir tous les utilisateurs
+// Route pour obtenir tous les utilisateurs (INCHANGÉE)
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const { search } = req.query;
@@ -87,7 +81,7 @@ router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   }
 });
 
-// Route pour mettre à jour le RÔLE d'un utilisateur
+// Route pour mettre à jour le RÔLE d'un utilisateur (INCHANGÉE)
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -109,7 +103,7 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
   }
 });
 
-// Route pour mettre à jour le STATUT d'un utilisateur
+// Route pour mettre à jour le STATUT d'un utilisateur (INCHANGÉE)
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -131,5 +125,45 @@ router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res)
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
+
+// ✅ NOUVELLE ROUTE POUR AJOUTER UN AVERTISSEMENT À LA PILE
+router.post('/users/:userId/warn', isAuthenticated, isSuperAdmin, async (req, res) => {
+    const { message } = req.body;
+    const { userId } = req.params;
+
+    if (!message || message.trim() === '') {
+        return res.status(400).json({ message: 'Le message ne peut pas être vide.' });
+    }
+
+    try {
+        const newWarning = { message }; // Le champ `createdAt` sera ajouté par défaut par Mongoose
+
+        // On cherche l'utilisateur et on ajoute le nouvel avertissement à son tableau `warnings`
+        const updatedUser = await User.findByIdAndUpdate(
+            userId, 
+            { $push: { warnings: newWarning } }, 
+            { new: true }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+        }
+
+        // On récupère le dernier avertissement ajouté pour l'envoyer via socket
+        const latestWarning = updatedUser.warnings[updatedUser.warnings.length - 1];
+
+        // On envoie l'événement en temps réel à l'utilisateur concerné s'il est connecté
+        if (req.io) {
+            req.io.to(userId).emit('user:receive_warning', { warning: latestWarning });
+        }
+
+        res.status(200).json({ message: 'Avertissement envoyé et sauvegardé avec succès.' });
+
+    } catch (error) {
+        console.error("Erreur lors de l'envoi de l'avertissement:", error);
+        res.status(500).json({ message: 'Erreur interne du serveur.' });
+    }
+});
+
 
 module.exports = router;
