@@ -1,4 +1,4 @@
-// baticlean-backend/routes/auth.routes.js (Version Complète)
+// backend/routes/auth.routes.js (Corrigé et Amélioré)
 
 const express = require('express');
 const router = express.Router();
@@ -11,8 +11,6 @@ const rateLimit = require('express-rate-limit');
 const SibApiV3Sdk = require('sib-api-v3-sdk');
 const { body, validationResult } = require('express-validator');
 const { isValidPhoneNumber } = require('libphonenumber-js');
-
-// NOUVEAU : On importe notre vérificateur de maintenance
 const { checkMaintenance } = require('./maintenance.routes.js');
 
 let defaultClient = SibApiV3Sdk.ApiClient.instance;
@@ -26,6 +24,7 @@ const authLimiter = rateLimit({
     keyGenerator: (req, res) => req.ip + (req.body.login || req.body.email),
 });
 
+// ✅ --- DÉBUT DE LA MODIFICATION ---
 router.post('/register', authLimiter, [
     body('username', 'Le nom d\'utilisateur est requis').not().isEmpty().trim().escape(),
     body('email', 'Veuillez fournir un email valide').isEmail().normalizeEmail(),
@@ -34,40 +33,62 @@ router.post('/register', authLimiter, [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ message: errors.array()[0].msg });
+    
     try {
         const { username, email, password, phoneNumber } = req.body;
         const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
         if (userExists) return res.status(400).json({ message: 'Email ou numéro déjà utilisé.' });
+
         const salt = await bcrypt.genSalt(12);
         const passwordHash = await bcrypt.hash(password, salt);
         const newUser = await User.create({ username, email, passwordHash, phoneNumber });
+
+        // On notifie les admins (comme avant)
         await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
         await broadcastNotificationCounts(req);
-        res.status(201).json({ message: `Utilisateur créé !` });
+        
+        // On génère le token IMMÉDIATEMENT
+        const { _id, role, status, profilePicture } = newUser;
+        const payload = { _id, email: newUser.email, username: newUser.username, role, status, profilePicture, phoneNumber: newUser.phoneNumber };
+        const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
+        
+        // On renvoie le token, et on précise que c'est un nouvel utilisateur
+        res.status(201).json({ 
+            authToken: authToken,
+            isNewUser: true 
+        });
+
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne.' });
     }
 });
+// ✅ --- FIN DE LA MODIFICATION ---
+
 
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
         if (!login || !password) return res.status(400).json({ message: 'Champs requis.' });
+        
         const user = await User.findOne({ $or: [{ email: login }, { phoneNumber: login }] });
         if (!user) return res.status(401).json({ message: 'Identifiants incorrects.' });
+
         const isPasswordCorrect = await bcrypt.compare(password, user.passwordHash);
         if (!isPasswordCorrect) return res.status(401).json({ message: 'Identifiants incorrects.' });
+        
         const { _id, username, role, email, status, profilePicture, phoneNumber } = user;
         const payload = { _id, email, username, role, status, profilePicture, phoneNumber };
         const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
+
         if (user.status !== 'active') return res.status(403).json({ message: 'Compte suspendu.', authToken });
+
         res.status(200).json({ authToken });
     } catch (error) {
         res.status(500).json({ message: 'Erreur interne.' });
     }
 });
 
-// NOUVEAU : On ajoute le middleware checkMaintenance ici
+// ... (le reste de ton fichier /forgot-password et /reset-password reste identique)
 router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password'), async (req, res) => {
     try {
         const { email } = req.body;
@@ -91,7 +112,6 @@ router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password')
         res.status(500).json({ message: "Erreur d'envoi de l'email." });
     }
 });
-
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
@@ -111,5 +131,6 @@ router.post('/reset-password/:token', async (req, res) => {
         res.status(500).json({ message: 'Erreur de réinitialisation.' });
     }
 });
+
 
 module.exports = router;
