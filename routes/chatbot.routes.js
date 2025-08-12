@@ -1,16 +1,15 @@
-// backend/routes/chatbot.routes.js
+// backend/routes/chatbot.routes.js (Corrigé)
 
 const express = require('express');
 const router = express.Router();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { isAuthenticated } = require('../middleware/isAdmin.js');
 
-// On configure l'accès à l'API avec notre clé secrète
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 router.post('/ask', isAuthenticated, async (req, res) => {
   try {
-    const { message, history } = req.body; // On reçoit le message et l'historique
+    const { message, history } = req.body;
 
     if (!message) {
       return res.status(400).json({ message: 'Le message ne peut être vide.' });
@@ -18,22 +17,26 @@ router.post('/ask', isAuthenticated, async (req, res) => {
 
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    // On donne ses instructions au bot !
     const systemPrompt = `
       Tu es un assistant virtuel pour BATIClean, une entreprise de services de nettoyage en Côte d'Ivoire.
       Ton nom est BATICleanBot.
       - Réponds toujours en français, de manière amicale et professionnelle.
       - Sois concis et va droit au but.
-      - Ton but principal est d'aider les utilisateurs. Si tu ne connais pas la réponse, propose de créer un ticket pour parler à un humain.
+      - Ton but principal est d'aider les utilisateurs. Si tu ne connais pas la réponse, propose explicitement de "créer un ticket pour parler à un humain".
       - Si on te demande les prix, les tarifs ou un devis, réponds que les informations sont sur la page des services et qu'un devis personnalisé peut être demandé en créant un ticket.
       - Ne réponds JAMAIS à des questions qui n'ont rien à voir avec BATIClean ou les services de nettoyage.
     `;
-
-    // On reconstruit l'historique pour donner du contexte à l'IA
-    const chatHistory = history.map(msg => ({
+    
+    // On transforme l'historique du frontend en format pour l'IA
+    const chatHistory = (history || []).map(msg => ({
       role: msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
+
+    // ✅ LA CORRECTION EST ICI : Si l'historique commence par le bot, on le retire.
+    if (chatHistory.length > 0 && chatHistory[0].role === 'model') {
+      chatHistory.shift(); // Retire le premier élément (le salut du bot)
+    }
 
     const chat = model.startChat({
       history: chatHistory,
