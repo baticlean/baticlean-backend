@@ -1,8 +1,10 @@
+// backend/socketManager.js (Corrigé)
+
 const { Server } = require("socket.io");
 const Ticket = require('./models/Ticket.model.js');
+const Warning = require('./models/Warning.model.js'); // ✅ On importe notre nouveau modèle
 
 let io;
-// Votre système utilise un objet, nous allons le conserver
 let onlineUsers = {};
 
 const initializeSocket = (server, corsOptions) => {
@@ -20,7 +22,6 @@ const initializeSocket = (server, corsOptions) => {
             }
         });
 
-        // ✅ CORRIGÉ : Logique de mise à jour des messages lus
         socket.on('markMessagesAsRead', async ({ ticketId, readerId }) => {
             try {
                 const ticket = await Ticket.findById(ticketId);
@@ -48,24 +49,35 @@ const initializeSocket = (server, corsOptions) => {
             }
         });
 
-        // ✅✅✅ DÉBUT DU BLOC AJOUTÉ POUR LES AVERTISSEMENTS ✅✅✅
-        // Émis par un admin pour avertir un utilisateur
-        socket.on('admin:warn_user', ({ userId, message }) => {
-            // 1. On cherche le socket de l'utilisateur cible dans votre objet onlineUsers
-            const userSocketId = onlineUsers[userId];
-            
-            if (userSocketId) {
-                // 2. Si on le trouve, on envoie l'événement *uniquement* à cet utilisateur
-                io.to(userSocketId).emit('user:receive_warning', { message });
-                console.log(`🔔 Avertissement envoyé à l'utilisateur ${userId} sur le socket ${userSocketId}`);
-            } else {
-                console.log(`⚠️ Utilisateur ${userId} non trouvé ou non connecté. Avertissement non envoyé.`);
+        // ✅✅✅ DÉBUT DE LA LOGIQUE D'AVERTISSEMENT AMÉLIORÉE ✅✅✅
+        // L'admin envoie un avertissement qui sera maintenant sauvegardé
+        socket.on('admin:warn_user', async ({ userId, adminId, message, actions }) => {
+            try {
+                // 1. Sauvegarder l'avertissement dans la base de données
+                await Warning.create({
+                    user: userId,
+                    sentBy: adminId, // L'ID de l'admin qui envoie
+                    message: message,
+                    actions: actions || [] // Les actions possibles pour l'utilisateur
+                });
+                console.log(`💾 Avertissement pour l'utilisateur ${userId} sauvegardé en BDD.`);
+
+                // 2. Notifier l'utilisateur en temps réel (s'il est en ligne)
+                const userSocketId = onlineUsers[userId];
+                if (userSocketId) {
+                    // On envoie un signal simple pour dire "va chercher tes nouveaux avertissements"
+                    io.to(userSocketId).emit('user:new_warning_received');
+                    console.log(`🔔 Notification de nouvel avertissement envoyée à ${userId}`);
+                } else {
+                    console.log(`⚠️ Utilisateur ${userId} non connecté. Il verra l'avertissement à sa prochaine connexion.`);
+                }
+            } catch (error) {
+                console.error("Erreur lors de la création de l'avertissement:", error);
             }
         });
-        // ✅✅✅ FIN DU BLOC AJOUTÉ POUR LES AVERTISSEMENTS ✅✅✅
+        // ✅✅✅ FIN DE LA LOGIQUE AMÉLIORÉE ✅✅✅
 
         socket.on("disconnect", () => {
-            // On parcourt l'objet pour trouver l'utilisateur à supprimer
             for (const userId in onlineUsers) {
                 if (onlineUsers[userId] === socket.id) {
                     delete onlineUsers[userId];

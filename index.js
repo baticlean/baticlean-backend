@@ -1,4 +1,4 @@
-// backend/index.js
+// backend/index.js (Corrigé)
 
 require('dotenv').config();
 
@@ -53,9 +53,10 @@ app.use('/api/notifications', require('./routes/notification.routes.js'));
 app.use('/api/config', require('./routes/config.routes.js'));
 const { router: maintenanceRouter } = require('./routes/maintenance.routes.js');
 app.use('/api/maintenance', maintenanceRouter);
-
-// ✅ On ajoute la nouvelle route pour le chatbot
 app.use('/api/chatbot', require('./routes/chatbot.routes.js'));
+
+// ✅ On ajoute la nouvelle route pour les avertissements
+app.use('/api/warnings', require('./routes/warning.routes.js'));
 
 // Démarrage du serveur
 server.listen(PORT, () => {
