@@ -3,29 +3,26 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User.model');
-const Booking = require('../models/Booking.model'); // On importe les modèles nécessaires
+const Booking = require('../models/Booking.model');
 const Service = require('../models/Service.model');
 const Ticket = require('../models/Ticket.model');
 const jwt = require('jsonwebtoken');
 const { isAuthenticated, isAdmin, isSuperAdmin } = require('../middleware/isAdmin.js');
 
-// ✅ NOUVEAU : Route pour les statistiques du tableau de bord
 router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
     try {
         const sevenDaysAgo = new Date(new Date().setDate(new Date().getDate() - 7));
 
-        // Cartes de statistiques principales
         const totalUsers = await User.countDocuments({ role: { $ne: 'superAdmin' } });
         const pendingBookings = await Booking.countDocuments({ status: 'En attente' });
         const newUsersLast7Days = await User.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
         const newBookingsLast7Days = await Booking.countDocuments({ createdAt: { $gte: sevenDaysAgo } });
 
-        // Derniers avis des clients
         const recentReviews = await Service.aggregate([
-            { $unwind: '$reviews' }, // Sépare chaque avis en un document distinct
-            { $sort: { 'reviews.createdAt': -1 } }, // Trie par date de l'avis
-            { $limit: 5 }, // Ne prend que les 5 plus récents
-            { $project: { // Formate les données pour le frontend
+            { $unwind: '$reviews' },
+            { $sort: { 'reviews.createdAt': -1 } },
+            { $limit: 5 },
+            { $project: {
                 _id: '$reviews._id',
                 serviceTitle: '$title',
                 username: '$reviews.username',
@@ -35,11 +32,13 @@ router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
             }}
         ]);
         
-        // Derniers tickets non assignés
         const recentTickets = await Ticket.find({ assignedAdmin: null })
             .sort({ createdAt: -1 })
             .limit(5)
             .populate('user', 'username');
+
+        // ✅ SÉCURITÉ : On filtre les tickets dont l'utilisateur a été supprimé
+        const validTickets = recentTickets.filter(ticket => ticket.user);
 
         res.status(200).json({
             stats: {
@@ -49,7 +48,7 @@ router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
                 newBookingsLast7Days
             },
             recentReviews,
-            recentTickets
+            recentTickets: validTickets // On envoie la liste filtrée
         });
 
     } catch (error) {
@@ -58,10 +57,6 @@ router.get('/dashboard-stats', isAuthenticated, isAdmin, async (req, res) => {
     }
 });
 
-
-// --- VOS AUTRES ROUTES (INCHANGÉES) ---
-
-// Route pour obtenir tous les utilisateurs
 router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   try {
     const { search } = req.query;
@@ -87,22 +82,39 @@ router.get('/users', isAuthenticated, isSuperAdmin, async (req, res) => {
   }
 });
 
+// ✅ --- DÉBUT DE LA CORRECTION ---
+// Cette fonction centralise la logique pour éviter la duplication
+const updateUserAndNotify = async (req, res, userId, updateData) => {
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, { new: true }).select('-passwordHash');
+    if (!updatedUser) {
+        return res.status(404).json({ message: 'Utilisateur non trouvé.' });
+    }
+    
+    // On génère le nouveau token avec les informations à jour (rôle, statut, etc.)
+    const payload = { 
+        _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, 
+        role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, 
+        phoneNumber: updatedUser.phoneNumber 
+    };
+    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
+
+    // On cherche si l'utilisateur est connecté pour lui envoyer une notification privée
+    const userSocketId = req.onlineUsers[userId];
+    if (userSocketId) {
+        console.log(`Envoi de la mise à jour à ${updatedUser.username} sur le socket ${userSocketId}`);
+        // On envoie la notification uniquement à l'utilisateur concerné
+        req.io.to(userSocketId).emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
+    }
+
+    // On renvoie l'utilisateur mis à jour au frontend de l'admin
+    res.status(200).json(updatedUser);
+};
+
 // Route pour mettre à jour le RÔLE d'un utilisateur
 router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { role } = req.body;
-    const updatedUser = await User.findByIdAndUpdate(userId, { role }, { new: true }).select('-passwordHash');
-    if (!updatedUser) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
-    
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, phoneNumber: updatedUser.phoneNumber };
-    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
-
-    req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
-
-    res.status(200).json(updatedUser);
+    // On utilise notre nouvelle fonction centralisée
+    await updateUserAndNotify(req, res, req.params.userId, { role: req.body.role });
   } catch (error) {
     console.error("Erreur lors de la mise à jour du rôle:", error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
@@ -112,24 +124,13 @@ router.patch('/users/:userId/role', isAuthenticated, isAdmin, async (req, res) =
 // Route pour mettre à jour le STATUT d'un utilisateur
 router.patch('/users/:userId/status', isAuthenticated, isAdmin, async (req, res) => {
   try {
-    const { userId } = req.params;
-    const { status } = req.body;
-
-    const updatedUser = await User.findByIdAndUpdate(userId, { status }, { new: true }).select('-passwordHash');
-    if (!updatedUser) {
-      return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-    }
-    
-    const payload = { _id: updatedUser._id, email: updatedUser.email, username: updatedUser.username, role: updatedUser.role, status: updatedUser.status, profilePicture: updatedUser.profilePicture, phoneNumber: updatedUser.phoneNumber };
-    const newAuthToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
-
-    req.io.emit('userUpdated', { user: updatedUser, newToken: newAuthToken });
-
-    res.status(200).json(updatedUser);
+    // On utilise notre nouvelle fonction centralisée
+    await updateUserAndNotify(req, res, req.params.userId, { status: req.body.status });
   } catch (error) {
     console.error("Erreur lors de la mise à jour du statut:", error);
     res.status(500).json({ message: 'Erreur interne du serveur.' });
   }
 });
+// ✅ --- FIN DE LA CORRECTION ---
 
 module.exports = router;
