@@ -96,14 +96,12 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
             return res.status(404).json({ message: 'Réservation non trouvée.' });
         }
         
-        // ✅ SÉCURITÉ AJOUTÉE : On bloque la modification si la réservation est déjà dans un état final.
         if (bookingToUpdate.status === 'Annulée' || bookingToUpdate.status === 'Terminée') {
             return res.status(400).json({ 
                 message: `Impossible de modifier une réservation qui est déjà '${bookingToUpdate.status}'.` 
             });
         }
         
-        // Le reste de la logique ne s'exécute que si la garde passe
         bookingToUpdate.status = status;
         bookingToUpdate.timeline.push({ status, eventDate: new Date() });
         bookingToUpdate.readByAdmins.addToSet(adminId);
@@ -136,6 +134,10 @@ router.patch('/:bookingId/status', isAuthenticated, isAdmin, async (req, res) =>
                 booking: populatedBooking
             });
         }
+        
+        // ✅ CORRECTION APPORTÉE ICI
+        // On notifie toutes les interfaces (y compris les admins) qu'une mise à jour a eu lieu.
+        req.io.emit('bookingUpdated', populatedBooking);
         
         await broadcastNotificationCounts(req);
         res.status(200).json(populatedBooking);
