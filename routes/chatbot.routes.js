@@ -1,4 +1,4 @@
-// backend/routes/chatbot.routes.js (Corrigé)
+// backend/routes/chatbot.routes.js (Nettoyé)
 
 const express = require('express');
 const router = express.Router();
@@ -27,16 +27,12 @@ router.post('/ask', isAuthenticated, async (req, res) => {
       - Ne réponds JAMAIS à des questions qui n'ont rien à voir avec BATIClean ou les services de nettoyage.
     `;
     
-    // On transforme l'historique du frontend en format pour l'IA
     const chatHistory = (history || []).map(msg => ({
       role: msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.text }]
     }));
 
-    // ✅ LA CORRECTION EST ICI : Si l'historique commence par le bot, on le retire.
-    if (chatHistory.length > 0 && chatHistory[0].role === 'model') {
-      chatHistory.shift(); // Retire le premier élément (le salut du bot)
-    }
+    // ✅ CORRECTION : La vérification "chatHistory.shift()" a été retirée car elle n'est plus nécessaire.
 
     const chat = model.startChat({
       history: chatHistory,
