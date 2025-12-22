@@ -1,4 +1,4 @@
-// backend/routes/auth.routes.js (Corrigé et Amélioré)
+// kevyamon/baticlean-backend/routes/auth.routes.js
 
 const express = require('express');
 const router = express.Router();
@@ -24,7 +24,7 @@ const authLimiter = rateLimit({
     keyGenerator: (req, res) => req.ip + (req.body.login || req.body.email),
 });
 
-// ✅ --- DÉBUT DE LA MODIFICATION ---
+// ROUTE INSCRIPTION (DEBUG MODE)
 router.post('/register', authLimiter, [
     body('username', 'Le nom d\'utilisateur est requis').not().isEmpty().trim().escape(),
     body('email', 'Veuillez fournir un email valide').isEmail().normalizeEmail(),
@@ -36,35 +36,48 @@ router.post('/register', authLimiter, [
     
     try {
         const { username, email, password, phoneNumber } = req.body;
+
+        // 1. Vérification doublons
         const userExists = await User.findOne({ $or: [{ email }, { phoneNumber }] });
         if (userExists) return res.status(400).json({ message: 'Email ou numéro déjà utilisé.' });
 
+        // 2. Hashage
         const salt = await bcrypt.genSalt(12);
         const passwordHash = await bcrypt.hash(password, salt);
+
+        // 3. Création User
         const newUser = await User.create({ username, email, passwordHash, phoneNumber });
 
-        // On notifie les admins (comme avant)
-        await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
-        await broadcastNotificationCounts(req);
+        // 4. Notifications (Isolé dans un try/catch pour ne pas bloquer l'inscription si le socket échoue)
+        try {
+            await broadcastToAdmins(req, 'newUserRegistered', { username: newUser.username });
+            await broadcastNotificationCounts(req);
+        } catch (notifError) {
+            console.error("⚠️ Erreur Notification (Non bloquant):", notifError.message);
+        }
         
-        // On génère le token IMMÉDIATEMENT
+        // 5. Génération Token
         const { _id, role, status, profilePicture } = newUser;
         const payload = { _id, email: newUser.email, username: newUser.username, role, status, profilePicture, phoneNumber: newUser.phoneNumber };
+        
+        if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET manquant dans les variables d'environnement !");
+        
         const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
         
-        // On renvoie le token, et on précise que c'est un nouvel utilisateur
         res.status(201).json({ 
             authToken: authToken,
             isNewUser: true 
         });
 
     } catch (error) {
-        res.status(500).json({ message: 'Erreur interne.' });
+        console.error("❌ ERREUR CRITIQUE REGISTER:", error);
+        // On renvoie le message exact de l'erreur pour comprendre ce qui se passe
+        res.status(500).json({ message: 'Erreur Serveur: ' + error.message });
     }
 });
-// ✅ --- FIN DE LA MODIFICATION ---
 
 
+// ROUTE LOGIN (DEBUG MODE)
 router.post('/login', authLimiter, async (req, res) => {
     try {
         const { login, password } = req.body;
@@ -78,17 +91,21 @@ router.post('/login', authLimiter, async (req, res) => {
         
         const { _id, username, role, email, status, profilePicture, phoneNumber } = user;
         const payload = { _id, email, username, role, status, profilePicture, phoneNumber };
+        
+        if (!process.env.JWT_SECRET) throw new Error("JWT_SECRET manquant !");
+
         const authToken = jwt.sign(payload, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '6h' });
 
         if (user.status !== 'active') return res.status(403).json({ message: 'Compte suspendu.', authToken });
 
         res.status(200).json({ authToken });
     } catch (error) {
-        res.status(500).json({ message: 'Erreur interne.' });
+        console.error("❌ ERREUR CRITIQUE LOGIN:", error);
+        res.status(500).json({ message: 'Erreur Serveur: ' + error.message });
     }
 });
 
-// ... (le reste de ton fichier /forgot-password et /reset-password reste identique)
+// ... (le reste reste identique)
 router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password'), async (req, res) => {
     try {
         const { email } = req.body;
@@ -109,9 +126,11 @@ router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password')
         }
         res.status(200).json({ message: 'Si un compte existe, un lien a été envoyé.' });
     } catch (error) {
-        res.status(500).json({ message: "Erreur d'envoi de l'email." });
+        console.error("❌ ERREUR EMAIL:", error); // Ajout log ici aussi
+        res.status(500).json({ message: "Erreur d'envoi de l'email: " + error.message });
     }
 });
+
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
@@ -128,9 +147,8 @@ router.post('/reset-password/:token', async (req, res) => {
         await user.save();
         res.status(200).json({ message: 'Mot de passe réinitialisé.' });
     } catch (error) {
-        res.status(500).json({ message: 'Erreur de réinitialisation.' });
+        res.status(500).json({ message: 'Erreur de réinitialisation: ' + error.message });
     }
 });
-
 
 module.exports = router;
