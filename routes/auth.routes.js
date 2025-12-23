@@ -13,13 +13,13 @@ const { body, validationResult } = require('express-validator');
 const { isValidPhoneNumber } = require('libphonenumber-js');
 const { checkMaintenance } = require('./maintenance.routes.js');
 
-// --- CONFIGURATION BREVO SÉCURISÉE ---
+// --- CONFIGURATION BREVO ---
 const setupBrevo = () => {
     const defaultClient = SibApiV3Sdk.ApiClient.instance;
     const apiKey = defaultClient.authentications['api-key'];
     
     if (!process.env.BREVO_API_KEY) {
-        console.error("❌ CRITIQUE : La variable BREVO_API_KEY est absente de l'environnement !");
+        console.error("❌ CRITIQUE : BREVO_API_KEY manquante dans Render !");
         return null;
     }
     
@@ -112,21 +112,21 @@ router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password')
             
             const sendSmtpEmail = {
                 to: [{ email: user.email, name: user.username }],
-                sender: { name: 'BATIClean Support', email: 'no-reply@baticlean-app.com' }, 
+                // ⚠️ REMPLACE no-reply@baticlean-app.com PAR TON EMAIL DE COMPTE BREVO CI-DESSOUS
+                sender: { name: 'BATIClean Support', email: 'baticlean225@gmail.com' }, 
                 subject: 'Réinitialisation de votre mot de passe BATIClean',
                 htmlContent: `
-                    <div style="font-family: Arial, sans-serif; text-align: center; color: #333; padding: 20px;">
-                        <h2 style="color: #3f51b5;">Réinitialisation 🔑</h2>
-                        <p>Bonjour ${user.username},</p>
-                        <p>Cliquez sur le bouton ci-dessous pour changer votre mot de passe.</p>
-                        <a href="${resetURL}" style="background-color: #3f51b5; color: white; padding: 15px 25px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; margin: 20px 0;">Réinitialiser mon mot de passe</a>
-                        <p style="font-size: 12px; color: #777;">Lien valable 15 minutes.</p>
+                    <div style="font-family: Arial, sans-serif; text-align: center; color: #333; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+                        <h2 style="color: #3f51b5;">BATIClean</h2>
+                        <p>Bonjour <strong>${user.username}</strong>,</p>
+                        <p>Cliquez sur le bouton ci-dessous pour réinitialiser votre mot de passe :</p>
+                        <a href="${resetURL}" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; margin: 20px 0;">Réinitialiser mon mot de passe</a>
+                        <p style="font-size: 12px; color: #777;">Ce lien est valable 15 minutes.</p>
                     </div>`,
             };
             
-            console.log(`[MAIL] Tentative d'envoi à: ${user.email}`);
             await apiInstance.sendTransacEmail(sendSmtpEmail);
-            console.log("[MAIL] ✅ Succès Brevo.");
+            console.log("[MAIL] ✅ Succès Brevo confirmé.");
         }
         
         res.status(200).json({ message: 'Si un compte existe, un lien a été envoyé.' });
@@ -161,4 +161,4 @@ router.post('/reset-password/:token', async (req, res) => {
     }
 });
 
-module.exports = router;
+module.exports = router;                   
