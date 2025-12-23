@@ -89,49 +89,51 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 });
 
-// ROUTE FORGOT PASSWORD (CORRIGÉE)
+// ROUTE FORGOT PASSWORD
 router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password'), async (req, res) => {
     try {
         const { email } = req.body;
-        // On cherche l'utilisateur
         const user = await User.findOne({ email });
         
-        if (user) {
-            const resetToken = crypto.randomBytes(20).toString('hex');
-            user.passwordResetToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-            user.passwordResetExpires = Date.now() + 15 * 60 * 1000;
-            await user.save({ validateBeforeSave: false });
-            
-            const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-            
-            // ✅ CORRECTION MAJEURE ICI : Sender ne doit PAS être gmail.com
-            // On met une adresse générique, Brevo utilisera son relais authentifié.
-            const sendSmtpEmail = {
-                to: [{ email: user.email, name: user.username }],
-                // On utilise un domaine qui n'est pas gmail pour forcer le relais Brevo
-                sender: { name: 'BATIClean Support', email: 'no-reply@baticlean-app.com' }, 
-                subject: 'Réinitialisation de votre mot de passe BATIClean',
-                htmlContent: `
-                    <div style="font-family: Arial, sans-serif; text-align: center; color: #333;">
-                        <h2 style="color: #8A2387;">Réinitialisation 🔑</h2>
-                        <p>Bonjour ${user.username},</p>
-                        <p>Cliquez sur le bouton ci-dessous pour changer de mot de passe.</p>
-                        <a href="${resetURL}" style="background-color: #E94057; color: white; padding: 15px 25px; text-decoration: none; border-radius: 50px; display: inline-block; font-weight: bold; margin: 20px 0;">Réinitialiser mon mot de passe</a>
-                        <p style="font-size: 12px; color: #777;">Si le bouton ne fonctionne pas, copiez ce lien : ${resetURL}</p>
-                    </div>`,
-            };
-            
-            console.log(`Tentative envoi mail à ${user.email}...`);
-            await apiInstance.sendTransacEmail(sendSmtpEmail);
-            console.log("✅ Mail envoyé avec succès par Brevo.");
+        if (!user) {
+            // Sécurité : ne pas confirmer si l'email existe ou non
+            return res.status(200).json({ message: 'Si un compte existe, un lien a été envoyé.' });
         }
+
+        const resetToken = crypto.randomBytes(20).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
         
-        // On renvoie TOUJOURS succès par sécurité (user enumeration attack)
+        user.passwordResetToken = hashedToken;
+        user.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 mins
+        await user.save({ validateBeforeSave: false });
+        
+        const resetURL = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+        
+        const sendSmtpEmail = {
+            to: [{ email: user.email, name: user.username }],
+            // ⚠️ CONSEIL : Utilise l'email vérifié sur ton compte Brevo ici
+            sender: { name: 'BATIClean Support', email: 'no-reply@baticlean-app.com' }, 
+            subject: 'Réinitialisation de votre mot de passe BATIClean',
+            htmlContent: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px; max-width: 600px; margin: auto;">
+                    <h2 style="color: #3f51b5; text-align: center;">Réinitialisation de mot de passe 🔑</h2>
+                    <p>Bonjour <strong>${user.username}</strong>,</p>
+                    <p>Vous avez demandé la réinitialisation de votre mot de passe pour votre compte BATIClean.</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${resetURL}" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Réinitialiser mon mot de passe</a>
+                    </div>
+                    <p style="font-size: 13px; color: #666;">Ce lien est valable pendant 15 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #999; text-align: center;">BATIClean - Services de nettoyage professionnel</p>
+                </div>`,
+        };
+        
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
         res.status(200).json({ message: 'Si un compte existe, un lien a été envoyé.' });
 
     } catch (error) {
-        // C'est ici qu'on capture la vraie erreur Brevo si ça plante
-        console.error("❌ ERREUR BREVO FORGOT-PASSWORD:", error.response ? error.response.text : error.message);
+        // Log détaillé pour le débuggage sur Render
+        console.error("❌ ERREUR BREVO DETAILED:", error.response ? error.response.body : error.message);
         res.status(500).json({ message: "Erreur technique lors de l'envoi." });
     }
 });
@@ -140,9 +142,12 @@ router.post('/forgot-password', authLimiter, checkMaintenance('forgot-password')
 router.post('/reset-password/:token', async (req, res) => {
     try {
         const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
-        const user = await User.findOne({ passwordResetToken: hashedToken });
-        if (!user) return res.status(400).json({ message: 'Lien invalide ou déjà utilisé.' });
-        if (Date.now() > user.passwordResetExpires) return res.status(400).json({ message: "Lien expiré. Veuillez refaire une demande." });
+        const user = await User.findOne({ 
+            passwordResetToken: hashedToken,
+            passwordResetExpires: { $gt: Date.now() } 
+        });
+
+        if (!user) return res.status(400).json({ message: 'Lien invalide ou expiré.' });
         
         const { password } = req.body;
         const passwordRegex = /^(?=.*[a-zA-Z])(?=(?:\D*\d){3,})(?=.*[!@#$%^&*(),.?":{}|<>]).{9,}$/;
@@ -154,7 +159,7 @@ router.post('/reset-password/:token', async (req, res) => {
         user.passwordResetExpires = undefined;
         await user.save();
         
-        res.status(200).json({ message: 'Mot de passe réinitialisé.' });
+        res.status(200).json({ message: 'Mot de passe réinitialisé avec succès.' });
     } catch (error) {
         console.error("RESET PASSWORD ERROR:", error);
         res.status(500).json({ message: 'Erreur de réinitialisation.' });
