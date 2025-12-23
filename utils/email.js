@@ -1,57 +1,60 @@
-// baticlean/baticlean-backend/baticlean-backend-7fb8ecb29682d81fea238ef7e2d5c58e262e55de/utils/email.js
+// baticlean/baticlean-backend/utils/email.js
 const nodemailer = require("nodemailer");
 
-// Création du transporteur avec une configuration plus permissive pour le débogage SSL
-// et strictement alignée sur les recommandations Brevo (Port 587 + STARTTLS)
+// Vérification préventive pour éviter le crash au démarrage
+const isEmailConfigured = process.env.EMAIL_USER && process.env.EMAIL_PASS;
+
+if (!isEmailConfigured) {
+  console.warn("⚠️ ATTENTION : Configuration Email manquante (EMAIL_USER ou EMAIL_PASS). Les emails ne seront pas envoyés.");
+}
+
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || "smtp-relay.brevo.com",
   port: process.env.EMAIL_PORT || 587,
-  secure: false, // false pour le port 587 (STARTTLS), true pour 465
+  secure: false, 
   auth: {
-    user: process.env.EMAIL_USER, // Ton login Brevo (souvent l'email du compte)
-    pass: process.env.EMAIL_PASS, // Ta clé API SMTP (PAS le mot de passe de ton compte Brevo !)
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
   tls: {
     ciphers: "SSLv3",
-    rejectUnauthorized: false, // Aide à contourner certaines erreurs de certificat locales
+    rejectUnauthorized: false, 
   },
 });
 
-// Fonction de vérification au démarrage (Diagnostic)
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("❌ ERREUR CRITIQUE EMAIL (Connection SMTP) :", error);
-  } else {
-    console.log("✅ Service Email (Brevo) prêt et connecté.");
-  }
-});
+// Vérification silencieuse (ne plante pas l'app, juste un log)
+if (isEmailConfigured) {
+  transporter.verify((error, success) => {
+    if (error) {
+      console.error("❌ ERREUR SMTP (Non bloquante) :", error.message);
+    } else {
+      console.log("✅ Service Email (Brevo) connecté et prêt.");
+    }
+  });
+}
 
 const sendEmail = async (options) => {
-  try {
-    // Vérification de sécurité des champs
-    if (!options.email || !options.subject || !options.message) {
-      throw new Error("Paramètres d'email manquants (email, sujet ou message).");
-    }
+  if (!isEmailConfigured) {
+    console.error("❌ Envoi annulé : Configuration Email manquante.");
+    return; // On arrête là sans faire planter
+  }
 
+  try {
     const mailOptions = {
-      from: `BatiClean Support <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`, // IMPORTANT: Doit être un expéditeur validé
+      from: `BatiClean Support <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
       to: options.email,
       subject: options.subject,
       text: options.message,
-      html: options.html || `<div>${options.message.replace(/\n/g, '<br>')}</div>`, // Fallback HTML simple
+      html: options.html || `<div>${options.message.replace(/\n/g, '<br>')}</div>`,
     };
 
-    console.log(`📩 Tentative d'envoi à : ${options.email} | Sujet : ${options.subject}`);
-
     const info = await transporter.sendMail(mailOptions);
-    
-    console.log(`✅ Email envoyé avec succès : ${info.messageId}`);
+    console.log(`📩 Email envoyé : ${info.messageId}`);
     return info;
 
   } catch (error) {
-    console.error("❌ ÉCHEC D'ENVOI D'EMAIL :", error.message);
-    // On renvoie l'erreur pour que le contrôleur sache que ça a échoué
-    throw error;
+    console.error("❌ ECHEC ENVOI EMAIL :", error.message);
+    throw error; // L'appelant (Frontend) saura qu'il y a eu une erreur
   }
 };
 
